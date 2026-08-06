@@ -11,6 +11,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "test": "tsx --test src/domain/ai-diagnostic/ai-diagnostic.schema.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
