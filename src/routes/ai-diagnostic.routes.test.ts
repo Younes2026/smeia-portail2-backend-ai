@@ -518,6 +518,53 @@ test("maps controlled AI failures to HTTP 502", async () => {
   });
 });
 
+test("keeps AI_INVALID_OUTPUT diagnostics internal and out of logs", async () => {
+  const sensitiveModelValue = "sensitive-model-output";
+  const loggedValues: unknown[][] = [];
+  const originalConsoleError = console.error;
+  console.error = (...values: unknown[]) => {
+    loggedValues.push(values);
+  };
+  const harness = createHttpHarness({
+    analyzeDiagnostic: async () => {
+      void sensitiveModelValue;
+      throw new AiDiagnosticError("AI_INVALID_OUTPUT", {
+        reason: "BUSINESS_RULE_VIOLATION",
+        issue_paths: [
+          "suggested_service_type_id",
+          "suggested_workshop_ids",
+        ],
+        prompt_version: "1.2.0",
+      });
+    },
+  });
+
+  try {
+    await withServer(harness.app, async (baseUrl) => {
+      const response = await postDiagnostic(baseUrl, {
+        authorization: `Bearer ${ACCESS_TOKEN}`,
+      });
+      const body = await readJson(response);
+      const serialized = JSON.stringify(body);
+
+      assert.equal(response.status, 502);
+      assert.deepEqual(body, {
+        error: {
+          code: "AI_INVALID_OUTPUT",
+          message: "The AI service could not complete the request.",
+        },
+      });
+      assert.equal(serialized.includes("reason"), false);
+      assert.equal(serialized.includes("issue_paths"), false);
+      assert.equal(serialized.includes("prompt_version"), false);
+      assert.equal(serialized.includes(sensitiveModelValue), false);
+      assert.deepEqual(loggedValues, []);
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+});
+
 test("returns a generic HTTP 500 without stack or request secrets", async () => {
   const harness = createHttpHarness({
     analyzeDiagnostic: async () => {

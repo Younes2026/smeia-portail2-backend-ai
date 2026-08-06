@@ -167,6 +167,46 @@ test("rejects needs_questions with a recommendation", () => {
   );
 });
 
+test("rejects needs_questions with a workshop recommendation", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      diagnosis_status: "needs_questions",
+      suggested_service_type_id: null,
+      suggested_workshop_ids: [1],
+      questions: [createQuestion()],
+    },
+    "suggested_workshop_ids",
+  );
+});
+
+test("rejects needs_questions without a question", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      diagnosis_status: "needs_questions",
+      suggested_service_type_id: null,
+      suggested_workshop_ids: [],
+      questions: [],
+    },
+    "questions",
+  );
+});
+
+test("rejects ready with questions", () => {
+  expectBusinessInvalid(
+    { ...createReadyOutput(), questions: [createQuestion()] },
+    "questions",
+  );
+});
+
+test("rejects ready with more than two workshops", () => {
+  expectBusinessInvalid(
+    { ...createReadyOutput(), suggested_workshop_ids: [1, 2, 3] },
+    "suggested_workshop_ids",
+  );
+});
+
 test("rejects observations when no image was provided", () => {
   expectBusinessInvalid(
     {
@@ -180,6 +220,19 @@ test("rejects observations when no image was provided", () => {
   );
 });
 
+test("rejects useful true when no image was provided", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      image_analysis: {
+        ...createReadyOutput().image_analysis,
+        useful: true,
+      },
+    },
+    "image_analysis.useful",
+  );
+});
+
 test("rejects a suggested photo without an image hint", () => {
   expectBusinessInvalid(
     {
@@ -188,6 +241,20 @@ test("rejects a suggested photo without an image hint", () => {
         ...createReadyOutput().image_analysis,
         photo_suggested: true,
         requested_image_hint: null,
+      },
+    },
+    "image_analysis.requested_image_hint",
+  );
+});
+
+test("rejects a suggested photo with an empty image hint", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      image_analysis: {
+        ...createReadyOutput().image_analysis,
+        photo_suggested: true,
+        requested_image_hint: "   ",
       },
     },
     "image_analysis.requested_image_hint",
@@ -206,6 +273,18 @@ test("rejects critical urgency without a safety message", () => {
   );
 });
 
+test("rejects critical urgency with an empty safety message", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      urgency_level: "critical",
+      driving_advice: "do_not_drive",
+      safety_message: "   ",
+    },
+    "safety_message",
+  );
+});
+
 test("rejects critical urgency with normal driving advice", () => {
   expectBusinessInvalid(
     {
@@ -216,6 +295,29 @@ test("rejects critical urgency with normal driving advice", () => {
     },
     "driving_advice",
   );
+});
+
+test("rejects critical urgency with caution driving advice", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      urgency_level: "critical",
+      driving_advice: "caution",
+      safety_message: "Arrêtez le véhicule dans un endroit sûr.",
+    },
+    "driving_advice",
+  );
+});
+
+test("rejects critical urgency with safe_to_drive", () => {
+  const result = AiDiagnosticModelOutputSchema.safeParse({
+    ...createReadyOutput(),
+    urgency_level: "critical",
+    driving_advice: "safe_to_drive",
+    safety_message: "Arrêtez le véhicule dans un endroit sûr.",
+  });
+
+  assert.equal(result.success, false);
 });
 
 test("rejects duplicate workshop IDs", () => {
@@ -262,5 +364,48 @@ test("rejects an out-of-scope response without a scope explanation", () => {
       client_message: "Je ne peux pas traiter cette demande.",
     },
     "client_message",
+  );
+});
+
+test("rejects out_of_scope with questions", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      diagnosis_status: "out_of_scope",
+      suggested_service_type_id: null,
+      suggested_workshop_ids: [],
+      questions: [createQuestion()],
+      client_message:
+        "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
+    },
+    "questions",
+  );
+});
+
+test("rejects out_of_scope with a service", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      diagnosis_status: "out_of_scope",
+      suggested_service_type_id: 2,
+      suggested_workshop_ids: [],
+      client_message:
+        "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
+    },
+    "suggested_service_type_id",
+  );
+});
+
+test("rejects out_of_scope with a workshop", () => {
+  expectBusinessInvalid(
+    {
+      ...createReadyOutput(),
+      diagnosis_status: "out_of_scope",
+      suggested_service_type_id: null,
+      suggested_workshop_ids: [1],
+      client_message:
+        "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
+    },
+    "suggested_workshop_ids",
   );
 });

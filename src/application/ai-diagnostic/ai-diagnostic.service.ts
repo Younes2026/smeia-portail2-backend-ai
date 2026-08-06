@@ -8,14 +8,19 @@ import {
   AiDiagnosticError,
   buildAiDiagnosticOpenAIRequest,
   createOpenAIClient,
+  getSafeZodIssuePaths,
   mapOpenAIError,
+  sanitizeAiDiagnosticIssuePaths,
+  type AiDiagnosticIssuePath,
   type AiDiagnosticOpenAIClientFactory,
+  type AiInvalidOutputReason,
 } from "../../infrastructure/openai/index.js";
 import {
   AiDiagnosticInputSchema,
   type AiDiagnosticInput,
 } from "./ai-diagnostic.input.js";
 import {
+  AI_DIAGNOSTIC_PROMPT_VERSION,
   AI_DIAGNOSTIC_SYSTEM_PROMPT,
   buildAiDiagnosticInputText,
 } from "./ai-diagnostic.prompt.js";
@@ -35,12 +40,33 @@ export type AiDiagnosticService = {
   analyzeAiDiagnostic(input: unknown): Promise<AiDiagnosticModelOutput>;
 };
 
+const compatibleWorkshopIdsByServiceCode = new Map<
+  string,
+  ReadonlySet<number>
+>([
+  ["MEC-DIAG B", new Set([1, 2])],
+  ["CAR", new Set([3])],
+  ["PEINT", new Set([4])],
+]);
+
+const createInvalidOutputError = (
+  reason: AiInvalidOutputReason,
+  issuePaths: readonly AiDiagnosticIssuePath[] = [],
+) =>
+  new AiDiagnosticError("AI_INVALID_OUTPUT", {
+    reason,
+    issue_paths: [...issuePaths],
+    prompt_version: AI_DIAGNOSTIC_PROMPT_VERSION,
+  });
+
 const validateCatalogSelections = (
   output: AiDiagnosticModelOutput,
   input: AiDiagnosticInput,
 ) => {
   if (output.image_analysis.image_provided !== (input.image !== null)) {
-    throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+    throw createInvalidOutputError("IMAGE_FLAG_MISMATCH", [
+      "image_analysis.image_provided",
+    ]);
   }
 
   const availableServiceIds = new Set(
@@ -54,7 +80,9 @@ const validateCatalogSelections = (
     output.suggested_service_type_id !== null &&
     !availableServiceIds.has(output.suggested_service_type_id)
   ) {
-    throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+    throw createInvalidOutputError("SERVICE_NOT_IN_CATALOG", [
+      "suggested_service_type_id",
+    ]);
   }
 
   if (
@@ -62,7 +90,33 @@ const validateCatalogSelections = (
       (workshopId) => !availableWorkshopIds.has(workshopId),
     )
   ) {
-    throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+    throw createInvalidOutputError("WORKSHOP_NOT_IN_CATALOG", [
+      "suggested_workshop_ids",
+    ]);
+  }
+
+  if (output.suggested_service_type_id === null) {
+    return;
+  }
+
+  const suggestedService = input.available_services.find(
+    (service) => service.id === output.suggested_service_type_id,
+  );
+  const compatibleWorkshopIds =
+    suggestedService?.code === null || suggestedService?.code === undefined
+      ? undefined
+      : compatibleWorkshopIdsByServiceCode.get(suggestedService.code);
+
+  if (
+    compatibleWorkshopIds === undefined ||
+    output.suggested_workshop_ids.some(
+      (workshopId) => !compatibleWorkshopIds.has(workshopId),
+    )
+  ) {
+    throw createInvalidOutputError("SERVICE_WORKSHOP_MISMATCH", [
+      "suggested_service_type_id",
+      "suggested_workshop_ids",
+    ]);
   }
 };
 
@@ -96,7 +150,7 @@ export const createAiDiagnosticService = (
         });
         providerResponse = await client.createResponse(request);
       } catch (error: unknown) {
-        throw mapOpenAIError(error);
+        throw mapOpenAIError(error, AI_DIAGNOSTIC_PROMPT_VERSION);
       }
 
       if (providerResponse.refused) {
@@ -104,25 +158,40 @@ export const createAiDiagnosticService = (
       }
 
       if (providerResponse.status === "incomplete") {
-        throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+        throw createInvalidOutputError("RESPONSE_INCOMPLETE");
       }
 
       if (providerResponse.status !== "completed") {
         throw new AiDiagnosticError("AI_PROVIDER_ERROR");
       }
 
+      if (
+        providerResponse.outputParsed === null ||
+        providerResponse.outputParsed === undefined
+      ) {
+        throw createInvalidOutputError("OUTPUT_PARSED_MISSING");
+      }
+
       const parsedOutput = AiDiagnosticModelOutputSchema.safeParse(
         providerResponse.outputParsed,
       );
       if (!parsedOutput.success) {
-        throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+        throw createInvalidOutputError(
+          "MODEL_SCHEMA_VIOLATION",
+          getSafeZodIssuePaths(parsedOutput.error),
+        );
       }
 
       const businessRulesResult = validateAiDiagnosticBusinessRules(
         parsedOutput.data,
       );
       if (!businessRulesResult.success) {
-        throw new AiDiagnosticError("AI_INVALID_OUTPUT");
+        throw createInvalidOutputError(
+          "BUSINESS_RULE_VIOLATION",
+          sanitizeAiDiagnosticIssuePaths(
+            businessRulesResult.error.issues.map((issue) => issue.path),
+          ),
+        );
       }
 
       validateCatalogSelections(parsedOutput.data, input);

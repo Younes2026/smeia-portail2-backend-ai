@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { z } from "zod";
+
 import type { AiDiagnosticModelOutput } from "../../domain/ai-diagnostic/index.js";
 import {
   AiDiagnosticError,
@@ -12,6 +14,10 @@ import {
   MAX_AI_DIAGNOSTIC_IMAGE_BYTES,
   type AiDiagnosticInput,
 } from "./ai-diagnostic.input.js";
+import {
+  AI_DIAGNOSTIC_PROMPT_VERSION,
+  AI_DIAGNOSTIC_SYSTEM_PROMPT,
+} from "./ai-diagnostic.prompt.js";
 import { createAiDiagnosticService } from "./ai-diagnostic.service.js";
 
 const TEST_API_KEY = "unit-test-api-key-placeholder";
@@ -27,7 +33,7 @@ const createInput = (): AiDiagnosticInput => ({
   },
   previous_answers: [],
   available_services: [
-    { id: 2, name: "Service test", code: "SERVICE_TEST" },
+    { id: 2, name: "Service test", code: "MEC-DIAG B" },
   ],
   available_workshops: [
     { id: 1, name: "Atelier test", workshop_type: "mechanical" },
@@ -98,12 +104,36 @@ const expectAiError = async (
   promise: Promise<unknown>,
   expectedCode: AiDiagnosticError["code"],
 ) => {
+  let caughtError: AiDiagnosticError | undefined;
+
   await assert.rejects(promise, (error: unknown) => {
     assert.ok(error instanceof AiDiagnosticError);
     assert.equal(error.code, expectedCode);
+    caughtError = error;
     return true;
   });
+
+  assert.ok(caughtError);
+  return caughtError;
 };
+
+test("uses prompt version 1.2.0", () => {
+  assert.equal(AI_DIAGNOSTIC_PROMPT_VERSION, "1.2.0");
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /Version du prompt : 1\.2\.0/);
+});
+
+test("includes the three-status consistency table in the prompt", () => {
+  for (const status of ["needs_questions", "ready", "out_of_scope"]) {
+    assert.match(
+      AI_DIAGNOSTIC_SYSTEM_PROMPT,
+      new RegExp(`diagnosis_status = "${status}"`),
+    );
+  }
+
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /suggested_service_type_id = null/);
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /suggested_workshop_ids = \[\]/);
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /image_analysis\.useful = false/);
+});
 
 test("analyzes text without adding an image input", async () => {
   const harness = createHarness(async () =>
@@ -284,10 +314,14 @@ test("maps a model refusal to a controlled error", async () => {
 test("rejects an absent structured output", async () => {
   const harness = createHarness(async () => completedResponse(null));
 
-  await expectAiError(
+  const error = await expectAiError(
     harness.service.analyzeAiDiagnostic(createInput()),
     "AI_INVALID_OUTPUT",
   );
+
+  assert.equal(error.reason, "OUTPUT_PARSED_MISSING");
+  assert.deepEqual(error.issue_paths, []);
+  assert.equal(error.prompt_version, "1.2.0");
 });
 
 test("rejects an incomplete provider response", async () => {
@@ -297,21 +331,71 @@ test("rejects an incomplete provider response", async () => {
     refused: false,
   }));
 
-  await expectAiError(
+  const error = await expectAiError(
     harness.service.analyzeAiDiagnostic(createInput()),
     "AI_INVALID_OUTPUT",
+  );
+
+  assert.equal(error.reason, "RESPONSE_INCOMPLETE");
+  assert.deepEqual(error.issue_paths, []);
+});
+
+test("maps an SDK ZodError to a safe internal reason", async () => {
+  const harness = createHarness(async () => {
+    z.object({ diagnosis_status: z.literal("ready") }).parse({
+      diagnosis_status: "sensitive-invalid-value",
+    });
+    return completedResponse(createReadyOutput());
+  });
+
+  const error = await expectAiError(
+    harness.service.analyzeAiDiagnostic(createInput()),
+    "AI_INVALID_OUTPUT",
+  );
+
+  assert.equal(error.reason, "SDK_ZOD_REJECTED");
+  assert.deepEqual(error.issue_paths, ["diagnosis_status"]);
+  assert.equal(
+    JSON.stringify(error).includes("sensitive-invalid-value"),
+    false,
+  );
+});
+
+test("maps a returned schema violation to a distinct safe reason", async () => {
+  const harness = createHarness(async () =>
+    completedResponse({
+      ...createReadyOutput(),
+      diagnosis_status: "sensitive-invalid-status",
+    }),
+  );
+
+  const error = await expectAiError(
+    harness.service.analyzeAiDiagnostic(createInput()),
+    "AI_INVALID_OUTPUT",
+  );
+
+  assert.equal(error.reason, "MODEL_SCHEMA_VIOLATION");
+  assert.deepEqual(error.issue_paths, ["diagnosis_status"]);
+  assert.equal(
+    JSON.stringify(error).includes("sensitive-invalid-status"),
+    false,
   );
 });
 
 test("rejects an output that violates business rules", async () => {
   const invalidOutput = createReadyOutput();
   invalidOutput.suggested_workshop_ids = [1, 1];
+  invalidOutput.client_message = "sensitive-model-output";
   const harness = createHarness(async () => completedResponse(invalidOutput));
 
-  await expectAiError(
+  const error = await expectAiError(
     harness.service.analyzeAiDiagnostic(createInput()),
     "AI_INVALID_OUTPUT",
   );
+
+  assert.equal(error.reason, "BUSINESS_RULE_VIOLATION");
+  assert.deepEqual(error.issue_paths, ["suggested_workshop_ids"]);
+  assert.equal(JSON.stringify(error).includes("sensitive-model-output"), false);
 });
 
 test("rejects a service absent from the received catalog", async () => {
@@ -319,10 +403,13 @@ test("rejects a service absent from the received catalog", async () => {
   output.suggested_service_type_id = 3;
   const harness = createHarness(async () => completedResponse(output));
 
-  await expectAiError(
+  const error = await expectAiError(
     harness.service.analyzeAiDiagnostic(createInput()),
     "AI_INVALID_OUTPUT",
   );
+
+  assert.equal(error.reason, "SERVICE_NOT_IN_CATALOG");
+  assert.deepEqual(error.issue_paths, ["suggested_service_type_id"]);
 });
 
 test("rejects a workshop absent from the received catalog", async () => {
@@ -330,10 +417,206 @@ test("rejects a workshop absent from the received catalog", async () => {
   output.suggested_workshop_ids = [2];
   const harness = createHarness(async () => completedResponse(output));
 
-  await expectAiError(
+  const error = await expectAiError(
     harness.service.analyzeAiDiagnostic(createInput()),
     "AI_INVALID_OUTPUT",
   );
+
+  assert.equal(error.reason, "WORKSHOP_NOT_IN_CATALOG");
+  assert.deepEqual(error.issue_paths, ["suggested_workshop_ids"]);
+});
+
+test("rejects image_provided true when no photo was supplied", async () => {
+  const output = createReadyOutput();
+  output.image_analysis.image_provided = true;
+  const harness = createHarness(async () => completedResponse(output));
+
+  const error = await expectAiError(
+    harness.service.analyzeAiDiagnostic(createInput()),
+    "AI_INVALID_OUTPUT",
+  );
+
+  assert.equal(error.reason, "IMAGE_FLAG_MISMATCH");
+  assert.deepEqual(error.issue_paths, ["image_analysis.image_provided"]);
+});
+
+type WorkshopId = 1 | 2 | 3 | 4;
+type ServiceId = 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+const workshopCatalog: Record<
+  WorkshopId,
+  AiDiagnosticInput["available_workshops"][number]
+> = {
+  1: { id: 1, name: "Atelier diagnostic", workshop_type: "diagnostic" },
+  2: { id: 2, name: "Atelier mécanique", workshop_type: "mecanique" },
+  3: { id: 3, name: "Atelier carrosserie", workshop_type: "carrosserie" },
+  4: { id: 4, name: "Atelier peinture", workshop_type: "peinture" },
+};
+
+const createCompatibilityCase = (
+  service: { id: ServiceId; code: string },
+  workshopIds: readonly WorkshopId[],
+) => {
+  const output = createReadyOutput();
+  output.suggested_service_type_id = service.id;
+  output.suggested_workshop_ids = [...workshopIds];
+  const harness = createHarness(async () => completedResponse(output));
+  const input: AiDiagnosticInput = {
+    ...createInput(),
+    available_services: [
+      { id: service.id, name: "Service catalogue", code: service.code },
+    ],
+    available_workshops: [1, 2, 3, 4].map(
+      (id) => workshopCatalog[id as WorkshopId],
+    ),
+  };
+
+  return { harness, input };
+};
+
+test("accepts MEC-DIAG B with workshop 1", async () => {
+  const { harness, input } = createCompatibilityCase(
+    { id: 2, code: "MEC-DIAG B" },
+    [1],
+  );
+
+  assert.equal(
+    (await harness.service.analyzeAiDiagnostic(input)).diagnosis_status,
+    "ready",
+  );
+});
+
+test("accepts MEC-DIAG B with workshop 2", async () => {
+  const { harness, input } = createCompatibilityCase(
+    { id: 2, code: "MEC-DIAG B" },
+    [2],
+  );
+
+  assert.equal(
+    (await harness.service.analyzeAiDiagnostic(input)).diagnosis_status,
+    "ready",
+  );
+});
+
+test("rejects MEC-DIAG B with workshop 3 or 4", async () => {
+  for (const workshopId of [3, 4] as const) {
+    const { harness, input } = createCompatibilityCase(
+      { id: 2, code: "MEC-DIAG B" },
+      [workshopId],
+    );
+    const error = await expectAiError(
+      harness.service.analyzeAiDiagnostic(input),
+      "AI_INVALID_OUTPUT",
+    );
+
+    assert.equal(error.reason, "SERVICE_WORKSHOP_MISMATCH");
+    assert.deepEqual(error.issue_paths, [
+      "suggested_service_type_id",
+      "suggested_workshop_ids",
+    ]);
+  }
+});
+
+test("accepts CAR with workshop 3", async () => {
+  const { harness, input } = createCompatibilityCase(
+    { id: 4, code: "CAR" },
+    [3],
+  );
+
+  assert.equal(
+    (await harness.service.analyzeAiDiagnostic(input)).diagnosis_status,
+    "ready",
+  );
+});
+
+test("rejects CAR with workshop 1, 2, or 4", async () => {
+  for (const workshopId of [1, 2, 4] as const) {
+    const { harness, input } = createCompatibilityCase(
+      { id: 4, code: "CAR" },
+      [workshopId],
+    );
+    const error = await expectAiError(
+      harness.service.analyzeAiDiagnostic(input),
+      "AI_INVALID_OUTPUT",
+    );
+
+    assert.equal(error.reason, "SERVICE_WORKSHOP_MISMATCH");
+  }
+});
+
+test("accepts PEINT with workshop 4", async () => {
+  const { harness, input } = createCompatibilityCase(
+    { id: 5, code: "PEINT" },
+    [4],
+  );
+
+  assert.equal(
+    (await harness.service.analyzeAiDiagnostic(input)).diagnosis_status,
+    "ready",
+  );
+});
+
+test("rejects PEINT with workshop 1, 2, or 3", async () => {
+  for (const workshopId of [1, 2, 3] as const) {
+    const { harness, input } = createCompatibilityCase(
+      { id: 5, code: "PEINT" },
+      [workshopId],
+    );
+    const error = await expectAiError(
+      harness.service.analyzeAiDiagnostic(input),
+      "AI_INVALID_OUTPUT",
+    );
+
+    assert.equal(error.reason, "SERVICE_WORKSHOP_MISMATCH");
+  }
+});
+
+test("accepts a coherent ready result for BMW Unknown without a photo", async () => {
+  const harness = createHarness(async () =>
+    completedResponse(createReadyOutput()),
+  );
+
+  const result = await harness.service.analyzeAiDiagnostic({
+    ...createInput(),
+    vehicle: {
+      brand: "BMW",
+      model: "Unknown",
+      year: null,
+      mileage: 6_472,
+    },
+  });
+
+  assert.equal(result.diagnosis_status, "ready");
+});
+
+test("accepts a coherent needs_questions result for BMW Unknown without a photo", async () => {
+  const output: AiDiagnosticModelOutput = {
+    ...createReadyOutput(),
+    diagnosis_status: "needs_questions",
+    suggested_service_type_id: null,
+    suggested_workshop_ids: [],
+    questions: [
+      {
+        id: "question_1",
+        text: "Le voyant clignote-t-il ?",
+        answer_type: "yes_no",
+        options: [],
+      },
+    ],
+  };
+  const harness = createHarness(async () => completedResponse(output));
+
+  const result = await harness.service.analyzeAiDiagnostic({
+    ...createInput(),
+    vehicle: {
+      brand: "BMW",
+      model: "Unknown",
+      year: null,
+      mileage: 6_472,
+    },
+  });
+
+  assert.equal(result.diagnosis_status, "needs_questions");
 });
 
 test("rejects an image larger than 5 MB before creating a client", async () => {
