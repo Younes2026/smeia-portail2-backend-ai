@@ -15,7 +15,7 @@ const allowedImageMimeTypes = [
   "image/webp",
 ] as const;
 
-const imageSchema = z
+export const AiDiagnosticImageSchema = z
   .object({
     mime_type: z.enum(allowedImageMimeTypes),
     data_url: z.string().min(1),
@@ -71,21 +71,22 @@ export const AiDiagnosticInputSchema = z
     vehicle: z
       .object({
         brand: z.string().trim().min(1),
-        model: z.string().trim().min(1),
+        model: z.string().trim().min(1).nullable(),
         year: z.number().int().nullable(),
+        mileage: z.number().int().min(0).nullable().default(null),
       })
       .strict(),
     previous_answers: z
       .array(
         z
           .object({
-            question_id: z.string().trim().min(1),
-            question: z.string().trim().min(1),
-            answer: z.string().trim().min(1),
+            question_id: z.string().trim().min(1).max(100),
+            question: z.string().trim().min(1).max(300),
+            answer: z.string().trim().min(1).max(1_000),
           })
           .strict(),
       )
-      .max(3),
+      .max(5),
     available_services: z.array(
       z
         .object({
@@ -104,8 +105,9 @@ export const AiDiagnosticInputSchema = z
         })
         .strict(),
     ),
-    image: imageSchema.nullable(),
+    image: AiDiagnosticImageSchema.nullable(),
   })
   .strict();
 
 export type AiDiagnosticInput = z.infer<typeof AiDiagnosticInputSchema>;
+export type AiDiagnosticImage = z.infer<typeof AiDiagnosticImageSchema>;

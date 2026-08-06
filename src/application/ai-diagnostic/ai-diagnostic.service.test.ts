@@ -23,6 +23,7 @@ const createInput = (): AiDiagnosticInput => ({
     brand: "Marque test",
     model: "Modèle test",
     year: 2022,
+    mileage: null,
   },
   previous_answers: [],
   available_services: [
@@ -457,7 +458,7 @@ test("rejects personal-data fields outside the input contract", async () => {
   assert.equal(harness.requests.length, 0);
 });
 
-test("rejects more than three previous answers", async () => {
+test("rejects more than five previous answers", async () => {
   const previousAnswer = {
     question_id: "question_1",
     question: "Question ?",
@@ -475,6 +476,8 @@ test("rejects more than three previous answers", async () => {
         { ...previousAnswer, question_id: "question_2" },
         { ...previousAnswer, question_id: "question_3" },
         { ...previousAnswer, question_id: "question_4" },
+        { ...previousAnswer, question_id: "question_5" },
+        { ...previousAnswer, question_id: "question_6" },
       ],
     }),
   );
