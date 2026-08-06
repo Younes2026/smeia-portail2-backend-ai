@@ -1,6 +1,7 @@
 import { env } from "../../config/env.js";
 import { createDirectusCatalogService } from "./directus-catalog.service.js";
 import { createDirectusHttpClient } from "./directus-http-client.js";
+import { createDirectusVehicleContextService } from "./directus-vehicle-context.service.js";
 
 const configuredCatalogService = createDirectusCatalogService(
   createDirectusHttpClient({
@@ -9,8 +10,20 @@ const configuredCatalogService = createDirectusCatalogService(
   }),
 );
 
+const configuredVehicleContextService = createDirectusVehicleContextService(
+  createDirectusHttpClient({
+    baseUrl: env.DIRECTUS_URL,
+    timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+  }),
+);
+
 export const getDirectusAiCatalogs = (accessToken: string) =>
   configuredCatalogService.getAiCatalogs(accessToken);
+
+export const getDirectusVehicleContext = (
+  accessToken: string,
+  vehicleId: unknown,
+) => configuredVehicleContextService.getVehicleContext(accessToken, vehicleId);
 
 export {
   createDirectusCatalogService,
@@ -30,3 +43,8 @@ export {
   type DirectusHttpClientConfig,
   type DirectusReadClient,
 } from "./directus-http-client.js";
+export {
+  createDirectusVehicleContextService,
+  type DirectusVehicleContext,
+  type DirectusVehicleContextService,
+} from "./directus-vehicle-context.service.js";
