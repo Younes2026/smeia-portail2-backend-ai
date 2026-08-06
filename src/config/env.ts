@@ -15,6 +15,14 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   DIRECTUS_URL: z.url().default("http://localhost:8055"),
   OPENAI_API_KEY: optionalSecretSchema,
+  OPENAI_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
+  OPENAI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(120_000)
+    .default(30_000),
+  OPENAI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   CORS_ORIGINS: z
     .string()
     .default("http://localhost:8081,http://localhost:19006")
@@ -31,6 +39,9 @@ const parsedEnv = envSchema.safeParse({
   PORT: process.env.PORT,
   DIRECTUS_URL: process.env.DIRECTUS_URL,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_MODEL: process.env.OPENAI_MODEL,
+  OPENAI_TIMEOUT_MS: process.env.OPENAI_TIMEOUT_MS,
+  OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES,
   CORS_ORIGINS: process.env.CORS_ORIGINS,
 });
 
