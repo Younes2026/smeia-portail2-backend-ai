@@ -13,6 +13,7 @@
     "start": "node dist/server.js",
     "test": "tsx --test src/domain/ai-diagnostic/ai-diagnostic.schema.test.ts src/application/ai-diagnostic/ai-diagnostic.service.test.ts src/application/ai-diagnostic/analyze-ai-diagnostic.use-case.test.ts src/infrastructure/directus/directus-http-client.test.ts src/infrastructure/directus/directus-catalog.service.test.ts src/infrastructure/directus/directus-vehicle-context.service.test.ts src/middleware/ai-rate-limit.test.ts src/routes/ai-diagnostic.routes.test.ts",
     "test:directus:live": "tsx scripts/test-directus-catalog-live.ts",
+    "test:ai-endpoint:image:live": "tsx scripts/test-ai-diagnostic-endpoint-image-live.ts",
     "test:ai-endpoint:live": "tsx scripts/test-ai-diagnostic-endpoint-live.ts",
     "test:ai:image:live": "tsx scripts/test-ai-diagnostic-image-live.ts",
     "test:ai:live": "tsx scripts/test-ai-diagnostic-live.ts",
