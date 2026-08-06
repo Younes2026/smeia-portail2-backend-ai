@@ -11,7 +11,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "tsx --test src/domain/ai-diagnostic/ai-diagnostic.schema.test.ts src/application/ai-diagnostic/ai-diagnostic.service.test.ts",
+    "test": "tsx --test src/domain/ai-diagnostic/ai-diagnostic.schema.test.ts src/application/ai-diagnostic/ai-diagnostic.service.test.ts src/infrastructure/directus/directus-http-client.test.ts src/infrastructure/directus/directus-catalog.service.test.ts",
     "test:ai:image:live": "tsx scripts/test-ai-diagnostic-image-live.ts",
     "test:ai:live": "tsx scripts/test-ai-diagnostic-live.ts",
     "typecheck": "tsc --noEmit"
