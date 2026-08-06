@@ -11,13 +11,13 @@ import {
 const FAKE_ACCESS_TOKEN = "unit-test-directus-token-placeholder";
 
 const validServices = [
-  { id: 8, name: "Service huit", code: "S8" },
-  { id: 2, name: "Service deux", code: "S2" },
-  { id: 7, name: "Service sept", code: "S7" },
-  { id: 3, name: "Service trois", code: "S3" },
-  { id: 6, name: "Service six", code: "S6" },
-  { id: 4, name: "Service quatre", code: "S4" },
-  { id: 5, name: "Service cinq", code: "S5" },
+  { id: 8, name: "Service huit", qualification_code: "MEC-DIAG B" },
+  { id: 2, name: "Service deux", qualification_code: "MEC-DIAG B" },
+  { id: 7, name: "Service sept", qualification_code: "PEINT" },
+  { id: 3, name: "Service trois", qualification_code: "MEC-DIAG B" },
+  { id: 6, name: "Service six", qualification_code: "CAR" },
+  { id: 4, name: "Service quatre", qualification_code: "CAR" },
+  { id: 5, name: "Service cinq", qualification_code: "PEINT" },
 ];
 
 const validWorkshops = [
@@ -108,7 +108,11 @@ test("requests the service_types endpoint with limited fields and filters", asyn
   const call = harness.calls[0];
   assert.ok(call);
   assert.equal(call.url.pathname, "/api/items/service_types");
-  assert.equal(call.url.searchParams.get("fields"), "id,name,code");
+  const fields = call.url.searchParams.get("fields")?.split(",") ?? [];
+  assert.deepEqual(fields, ["id", "name", "qualification_code"]);
+  assert.equal(fields.includes("code"), false);
+  assert.equal(fields.includes("service_code"), false);
+  assert.equal(fields.includes("workshop_type"), false);
   assert.equal(call.url.searchParams.get("filter[id][_in]"), "2,3,4,5,6,7,8");
   assert.equal(call.url.searchParams.get("sort"), "id");
   assert.equal(call.url.searchParams.get("limit"), "7");
@@ -151,7 +155,11 @@ test("returns both complete catalogs sorted by ID", async () => {
     result.available_workshops.map((workshop) => workshop.id),
     [1, 2, 3, 4],
   );
-  assert.equal(result.available_services[0]?.name, "Service deux");
+  assert.deepEqual(result.available_services[0], {
+    id: 2,
+    name: "Service deux",
+    code: "MEC-DIAG B",
+  });
 });
 
 test("returns exactly the AI catalog contract without workshop flags", async () => {
@@ -177,7 +185,11 @@ test("returns exactly the AI catalog contract without workshop flags", async () 
 
 test("rejects an unknown service ID", async () => {
   const services = validServices.map((service) => ({ ...service }));
-  services[0] = { id: 9, name: "Unknown", code: "UNKNOWN" };
+  services[0] = {
+    id: 9,
+    name: "Unknown",
+    qualification_code: "UNKNOWN",
+  };
   const harness = createCatalogHarness({ servicesPayload: { data: services } });
 
   await expectInvalidCatalog(
@@ -271,9 +283,49 @@ test("rejects a response without data", async () => {
   );
 });
 
-test("rejects invalid, missing, and additional item fields", async () => {
+test("rejects a missing service qualification_code", async () => {
   const services = validServices.map((service) => ({ ...service }));
-  const invalidItem = { id: 8, name: "", extra: "not allowed" };
+  const invalidItem = { id: 8, name: "Service huit" };
+  const harness = createCatalogHarness({
+    servicesPayload: { data: [invalidItem, ...services.slice(1)] },
+  });
+
+  await expectInvalidCatalog(
+    harness.service.getAvailableServices(FAKE_ACCESS_TOKEN),
+  );
+});
+
+test("rejects an empty service qualification_code", async () => {
+  const services = validServices.map((service) => ({ ...service }));
+  services[0] = { ...services[0]!, qualification_code: " " };
+  const harness = createCatalogHarness({ servicesPayload: { data: services } });
+
+  await expectInvalidCatalog(
+    harness.service.getAvailableServices(FAKE_ACCESS_TOKEN),
+  );
+});
+
+test("rejects an invalid service qualification_code", async () => {
+  const services = validServices.map((service) => ({ ...service }));
+  const invalidItem = {
+    ...services[0]!,
+    qualification_code: 123,
+  };
+  const harness = createCatalogHarness({
+    servicesPayload: { data: [invalidItem, ...services.slice(1)] },
+  });
+
+  await expectInvalidCatalog(
+    harness.service.getAvailableServices(FAKE_ACCESS_TOKEN),
+  );
+});
+
+test("rejects additional raw service fields", async () => {
+  const services = validServices.map((service) => ({ ...service }));
+  const invalidItem = {
+    ...services[0]!,
+    service_code: "must-not-enter-the-AI-contract",
+  };
   const harness = createCatalogHarness({
     servicesPayload: { data: [invalidItem, ...services.slice(1)] },
   });

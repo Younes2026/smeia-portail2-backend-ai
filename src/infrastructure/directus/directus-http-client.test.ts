@@ -47,13 +47,16 @@ test("uses DIRECTUS_URL, GET, the requested endpoint, and JSON headers", async (
 
   await client.getJson(
     "/items/service_types",
-    new URLSearchParams({ fields: "id,name,code" }),
+    new URLSearchParams({ fields: "id,name,qualification_code" }),
     FAKE_ACCESS_TOKEN,
   );
 
   assert.equal(capturedUrl?.origin, "https://directus.example.test:8443");
   assert.equal(capturedUrl?.pathname, "/directus/items/service_types");
-  assert.equal(capturedUrl?.searchParams.get("fields"), "id,name,code");
+  assert.equal(
+    capturedUrl?.searchParams.get("fields"),
+    "id,name,qualification_code",
+  );
   assert.equal(capturedInit?.method, "GET");
   const headers = new Headers(capturedInit?.headers);
   assert.equal(headers.get("Accept"), "application/json");

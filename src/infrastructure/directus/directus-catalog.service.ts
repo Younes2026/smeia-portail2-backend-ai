@@ -11,6 +11,14 @@ const directusServiceSchema = z
   .object({
     id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
     name: z.string().trim().min(1),
+    qualification_code: z.string().trim().min(1),
+  })
+  .strict();
+
+const availableServiceSchema = z
+  .object({
+    id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
+    name: z.string().trim().min(1),
     code: z.string().trim().min(1),
   })
   .strict();
@@ -37,7 +45,7 @@ const directusWorkshopsResponseSchema = z
   })
   .strict();
 
-export type AvailableService = z.infer<typeof directusServiceSchema>;
+export type AvailableService = z.infer<typeof availableServiceSchema>;
 export type AvailableWorkshop = Pick<
   z.infer<typeof directusWorkshopSchema>,
   "id" | "name" | "workshop_type"
@@ -59,7 +67,7 @@ export interface DirectusCatalogService {
 }
 
 const serviceQuery = new URLSearchParams([
-  ["fields", "id,name,code"],
+  ["fields", "id,name,qualification_code"],
   ["filter[id][_in]", ALLOWED_SERVICE_TYPE_IDS.join(",")],
   ["sort", "id"],
   ["limit", String(ALLOWED_SERVICE_TYPE_IDS.length)],
@@ -98,7 +106,13 @@ const parseServices = (payload: unknown): AvailableService[] => {
     throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
   }
 
-  return [...parsed.data.data].sort((left, right) => left.id - right.id);
+  return [...parsed.data.data]
+    .sort((left, right) => left.id - right.id)
+    .map(({ id, name, qualification_code }) => ({
+      id,
+      name,
+      code: qualification_code,
+    }));
 };
 
 const parseWorkshops = (payload: unknown): AvailableWorkshop[] => {
