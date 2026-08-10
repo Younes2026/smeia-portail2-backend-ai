@@ -77,8 +77,21 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   if (error instanceof BookingAvailabilityError) {
-    const status =
-      error.code === "BOOKING_AVAILABILITY_NOT_FOUND" ? 404 : 502;
+    const status = (() => {
+      if (error.code === "BOOKING_AVAILABILITY_NOT_FOUND") {
+        return 404;
+      }
+      if (error.code === "BOOKING_CONFIGURATION_ERROR") {
+        return 503;
+      }
+      if (error.code === "BOOKING_SLOT_TOKEN_EXPIRED") {
+        return 410;
+      }
+      if (error.code === "BOOKING_SLOT_TOKEN_INVALID") {
+        return 400;
+      }
+      return 502;
+    })();
     sendError(response, status, error.code, error.message);
     return;
   }

@@ -37,6 +37,7 @@ const createWorkshop = (
 const createRequest = (
   overrides: Partial<AppointmentAvailabilityRequest> = {},
 ): AppointmentAvailabilityRequest => ({
+  vehicle_id: 14,
   service_type_id: 2,
   workshop_ids: [1],
   preferred_date: MONDAY,

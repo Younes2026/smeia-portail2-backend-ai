@@ -87,6 +87,18 @@ const showroomSchema = z
 
 const optionSchema = z
   .object({
+    slot_token: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
+    expires_at: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/),
+    service_type: z
+      .object({
+        id: z.literal(2),
+        name: z.string().trim().min(1),
+      })
+      .strict(),
     workshop_id: z.union([z.literal(1), z.literal(2)]),
     workshop_name: z.string().trim().min(1),
     showroom: showroomSchema,
@@ -120,9 +132,10 @@ const errorResponseSchema = z
   .strict();
 
 const requestBody = {
+  vehicle_id: 14,
   service_type_id: 2,
   workshop_ids: [1, 2],
-  preferred_date: "2026-08-11",
+  preferred_date: "2026-08-12",
   preferred_period: "morning",
 } as const;
 
@@ -271,13 +284,25 @@ const main = async () => {
       throw new Error("LIVE_TEST_UNSAFE_AVAILABILITY_RESPONSE");
     }
 
+    const safeOptions = parsedResponse.data.data.options.map((option) => ({
+      expires_at: option.expires_at,
+      service_type: option.service_type,
+      workshop_id: option.workshop_id,
+      workshop_name: option.workshop_name,
+      showroom: option.showroom,
+      requested_date: option.requested_date,
+      requested_time: option.requested_time,
+      slot_interval_minutes: option.slot_interval_minutes,
+      label: option.label,
+    }));
+
     console.log(
       JSON.stringify(
         {
           http_status: response.status,
           preferred_date_available:
             parsedResponse.data.data.preferred_date_available,
-          options: parsedResponse.data.data.options,
+          options: safeOptions,
           network: getNetworkSummary(),
         },
         null,

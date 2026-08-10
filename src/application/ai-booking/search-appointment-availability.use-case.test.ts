@@ -2,12 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DirectusBookingAvailabilitySnapshot } from "../../domain/ai-booking/index.js";
-import type { DirectusAiCatalogs } from "../../infrastructure/directus/index.js";
+import {
+  DirectusError,
+  type DirectusAiCatalogs,
+  type DirectusVehicleContext,
+} from "../../infrastructure/directus/index.js";
 import { BookingAvailabilityError } from "./booking-errors.js";
+import { createBookingSlotTokenService } from "./booking-slot-token.service.js";
 import { createSearchAppointmentAvailabilityUseCase } from "./search-appointment-availability.use-case.js";
 
 const CLIENT_TOKEN = "unit-test-client-token-placeholder";
+const SLOT_SECRET = "unit-test-booking-slot-secret-placeholder";
 const TODAY = new Date("2026-08-10T12:00:00.000Z");
+
+const vehicleContext: DirectusVehicleContext = {
+  vehicle_id: 14,
+  brand: "BMW",
+  model: "Unknown",
+  year: null,
+  mileage: 6_472,
+};
 
 const catalogs: DirectusAiCatalogs = {
   available_services: [
@@ -60,34 +74,59 @@ const snapshot: DirectusBookingAvailabilitySnapshot = {
   appointments: [],
 };
 
-const createHarness = (
-  bookingSnapshot: DirectusBookingAvailabilitySnapshot = snapshot,
-) => {
+type HarnessOptions = {
+  bookingSnapshot?: DirectusBookingAvailabilitySnapshot;
+  slotSecret?: string;
+  getVehicleContext?: (
+    accessToken: string,
+    vehicleId: unknown,
+  ) => Promise<DirectusVehicleContext>;
+};
+
+const createHarness = (options: HarnessOptions = {}) => {
+  const vehicleCalls: Array<{ accessToken: string; vehicleId: unknown }> = [];
   const catalogTokens: string[] = [];
   const snapshotQueries: unknown[] = [];
   const useCase = createSearchAppointmentAvailabilityUseCase({
+    async getVehicleContext(accessToken, vehicleId) {
+      vehicleCalls.push({ accessToken, vehicleId });
+      if (options.getVehicleContext !== undefined) {
+        return options.getVehicleContext(accessToken, vehicleId);
+      }
+      return vehicleContext;
+    },
     async getAiCatalogs(accessToken) {
       catalogTokens.push(accessToken);
       return catalogs;
     },
     async getBookingSnapshot(query) {
       snapshotQueries.push(query);
-      return bookingSnapshot;
+      return options.bookingSnapshot ?? snapshot;
     },
+    slotTokenService: createBookingSlotTokenService({
+      secret: options.slotSecret ?? SLOT_SECRET,
+      now: () => TODAY,
+    }),
     now: () => TODAY,
   });
-  return { catalogTokens, snapshotQueries, useCase };
+  return { catalogTokens, snapshotQueries, useCase, vehicleCalls };
 };
 
-test("verifies catalogs with the client token and searches a bounded range", async () => {
-  const harness = createHarness();
-  const result = await harness.useCase(CLIENT_TOKEN, {
-    service_type_id: 2,
-    workshop_ids: [1],
-    preferred_date: "2026-08-12",
-    preferred_period: "morning",
-  });
+const validRequest = {
+  vehicle_id: 14,
+  service_type_id: 2,
+  workshop_ids: [1],
+  preferred_date: "2026-08-12",
+  preferred_period: "morning",
+} as const;
 
+test("verifies the vehicle with the client token before reading availability", async () => {
+  const harness = createHarness();
+  await harness.useCase(CLIENT_TOKEN, validRequest);
+
+  assert.deepEqual(harness.vehicleCalls, [
+    { accessToken: CLIENT_TOKEN, vehicleId: 14 },
+  ]);
   assert.deepEqual(harness.catalogTokens, [CLIENT_TOKEN]);
   assert.deepEqual(harness.snapshotQueries, [
     {
@@ -96,7 +135,59 @@ test("verifies catalogs with the client token and searches a bounded range", asy
       endDate: "2026-09-10",
     },
   ]);
-  assert.equal(result.options[0]?.requested_date, "2026-08-12");
+});
+
+test("returns the service name and one signed token for each of at most three options", async () => {
+  const harness = createHarness();
+  const result = await harness.useCase(CLIENT_TOKEN, validRequest);
+  const verifier = createBookingSlotTokenService({
+    secret: SLOT_SECRET,
+    now: () => TODAY,
+  });
+
+  assert.equal(result.options.length, 3);
+  assert.ok(result.options.every((option) => option.slot_token.length > 0));
+  assert.ok(
+    result.options.every(
+      (option) => option.expires_at === "2026-08-10T12:10:00.000Z",
+    ),
+  );
+  assert.deepEqual(result.options[0]?.service_type, {
+    id: 2,
+    name: "Diagnostic",
+  });
+  assert.deepEqual(
+    verifier.verify(result.options[0]?.slot_token ?? ""),
+    {
+      version: 1,
+      expiration: 1_786_363_800,
+      vehicle_id: 14,
+      service_type_id: 2,
+      workshop_id: 1,
+      requested_date: "2026-08-12",
+      requested_time: "08:00:00",
+      slot_interval_minutes: 30,
+    },
+  );
+});
+
+test("rejects an inaccessible vehicle before catalog or occupancy reads", async () => {
+  const harness = createHarness({
+    async getVehicleContext() {
+      throw new DirectusError("DIRECTUS_VEHICLE_NOT_ACCESSIBLE");
+    },
+  });
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, validRequest),
+    (error: unknown) => {
+      assert.ok(error instanceof DirectusError);
+      assert.equal(error.code, "DIRECTUS_VEHICLE_NOT_ACCESSIBLE");
+      return true;
+    },
+  );
+  assert.equal(harness.catalogTokens.length, 0);
+  assert.equal(harness.snapshotQueries.length, 0);
 });
 
 test("rejects workshop/service incompatibility before reading occupancy", async () => {
@@ -104,8 +195,8 @@ test("rejects workshop/service incompatibility before reading occupancy", async 
 
   await assert.rejects(
     harness.useCase(CLIENT_TOKEN, {
+      ...validRequest,
       service_type_id: 4,
-      workshop_ids: [1],
     }),
     (error: unknown) => {
       assert.ok(error instanceof BookingAvailabilityError);
@@ -118,17 +209,16 @@ test("rejects workshop/service incompatibility before reading occupancy", async 
 
 test("returns a controlled not-found error when no slot exists", async () => {
   const harness = createHarness({
-    workshops: [],
-    schedules: [],
-    resources: [],
-    appointments: [],
+    bookingSnapshot: {
+      workshops: [],
+      schedules: [],
+      resources: [],
+      appointments: [],
+    },
   });
 
   await assert.rejects(
-    harness.useCase(CLIENT_TOKEN, {
-      service_type_id: 2,
-      workshop_ids: [1],
-    }),
+    harness.useCase(CLIENT_TOKEN, validRequest),
     (error: unknown) => {
       assert.ok(error instanceof BookingAvailabilityError);
       assert.equal(error.code, "BOOKING_AVAILABILITY_NOT_FOUND");
@@ -136,4 +226,20 @@ test("returns a controlled not-found error when no slot exists", async () => {
       return true;
     },
   );
+});
+
+test("returns a controlled configuration error before any Directus read", async () => {
+  const harness = createHarness({ slotSecret: " " });
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, validRequest),
+    (error: unknown) => {
+      assert.ok(error instanceof BookingAvailabilityError);
+      assert.equal(error.code, "BOOKING_CONFIGURATION_ERROR");
+      return true;
+    },
+  );
+  assert.equal(harness.vehicleCalls.length, 0);
+  assert.equal(harness.catalogTokens.length, 0);
+  assert.equal(harness.snapshotQueries.length, 0);
 });

@@ -3,35 +3,48 @@ import {
 } from "../../domain/ai-diagnostic/index.js";
 import {
   BOOKING_SEARCH_WINDOW_DAYS,
+  SecuredAppointmentAvailabilityResultSchema,
   addIsoDateDays,
   createAppointmentAvailabilityRequestSchema,
   findAppointmentAvailability,
   getCasablancaIsoDate,
   getCasablancaIsoTime,
-  type AppointmentAvailabilityResult,
   type DirectusBookingAvailabilitySnapshot,
+  type SecuredAppointmentAvailabilityResult,
 } from "../../domain/ai-booking/index.js";
+import { env } from "../../config/env.js";
 import {
   DirectusError,
   getDirectusAiCatalogs,
   getDirectusBookingAvailabilitySnapshot,
+  getDirectusVehicleContext,
   type DirectusAiCatalogs,
   type DirectusBookingAvailabilityQuery,
+  type DirectusVehicleContext,
 } from "../../infrastructure/directus/index.js";
 import { BookingAvailabilityError } from "./booking-errors.js";
+import {
+  createBookingSlotTokenService,
+  type BookingSlotTokenService,
+} from "./booking-slot-token.service.js";
 
 export type SearchAppointmentAvailabilityUseCaseDependencies = {
+  getVehicleContext(
+    accessToken: string,
+    vehicleId: unknown,
+  ): Promise<DirectusVehicleContext>;
   getAiCatalogs(accessToken: string): Promise<DirectusAiCatalogs>;
   getBookingSnapshot(
     query: DirectusBookingAvailabilityQuery,
   ): Promise<DirectusBookingAvailabilitySnapshot>;
+  slotTokenService: BookingSlotTokenService;
   now(): Date;
 };
 
 export type SearchAppointmentAvailabilityUseCase = (
   accessToken: string,
   request: unknown,
-) => Promise<AppointmentAvailabilityResult>;
+) => Promise<SecuredAppointmentAvailabilityResult>;
 
 const validateRequestedCatalogContext = (
   request: {
@@ -62,6 +75,8 @@ const validateRequestedCatalogContext = (
   ) {
     throw new BookingAvailabilityError("BOOKING_AVAILABILITY_NOT_FOUND");
   }
+
+  return service;
 };
 
 export const createSearchAppointmentAvailabilityUseCase = (
@@ -77,8 +92,10 @@ export const createSearchAppointmentAvailabilityUseCase = (
     const request = createAppointmentAvailabilityRequestSchema(today).parse(
       rawRequest,
     );
+    dependencies.slotTokenService.assertConfigured();
+    await dependencies.getVehicleContext(accessToken, request.vehicle_id);
     const catalogs = await dependencies.getAiCatalogs(accessToken);
-    validateRequestedCatalogContext(request, catalogs);
+    const service = validateRequestedCatalogContext(request, catalogs);
 
     const startDate = request.preferred_date ?? today;
     const endDate = addIsoDateDays(
@@ -99,12 +116,41 @@ export const createSearchAppointmentAvailabilityUseCase = (
       throw new BookingAvailabilityError("BOOKING_AVAILABILITY_NOT_FOUND");
     }
 
-    return result;
+    return SecuredAppointmentAvailabilityResultSchema.parse({
+      preferred_date_available: result.preferred_date_available,
+      options: result.options.map((option) => {
+        const createdToken = dependencies.slotTokenService.create({
+          vehicle_id: request.vehicle_id,
+          service_type_id: service.id,
+          workshop_id: option.workshop_id,
+          requested_date: option.requested_date,
+          requested_time: option.requested_time,
+          slot_interval_minutes: option.slot_interval_minutes,
+        });
+
+        return {
+          slot_token: createdToken.slotToken,
+          expires_at: createdToken.expiresAt,
+          service_type: {
+            id: service.id,
+            name: service.name,
+          },
+          ...option,
+        };
+      }),
+    });
   };
+
+const systemClock = () => new Date();
 
 export const searchAppointmentAvailabilityUseCase =
   createSearchAppointmentAvailabilityUseCase({
+    getVehicleContext: getDirectusVehicleContext,
     getAiCatalogs: getDirectusAiCatalogs,
     getBookingSnapshot: getDirectusBookingAvailabilitySnapshot,
-    now: () => new Date(),
+    slotTokenService: createBookingSlotTokenService({
+      secret: env.AI_BOOKING_SLOT_SECRET,
+      now: systemClock,
+    }),
+    now: systemClock,
   });

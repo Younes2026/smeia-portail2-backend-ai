@@ -11,6 +11,7 @@ import {
   type SearchAppointmentAvailabilityUseCase,
 } from "../application/ai-booking/index.js";
 import { createAppointmentAvailabilityRequestSchema } from "../domain/ai-booking/index.js";
+import { DirectusError } from "../infrastructure/directus/index.js";
 import { createAiRateLimiter } from "../middleware/ai-rate-limit.js";
 
 const CLIENT_TOKEN = "unit-test-client-token-placeholder";
@@ -19,6 +20,12 @@ const availability = {
   preferred_date_available: true,
   options: [
     {
+      slot_token: "unit-test-slot-token-placeholder",
+      expires_at: "2026-08-10T12:10:00.000Z",
+      service_type: {
+        id: 2 as const,
+        name: "Diagnostic",
+      },
       workshop_id: 1 as const,
       workshop_name: "Atelier Rapide",
       showroom: {
@@ -37,6 +44,7 @@ const availability = {
 };
 
 const validBody = {
+  vehicle_id: 14,
   service_type_id: 2,
   workshop_ids: [1],
   preferred_date: "2026-08-12",
@@ -165,6 +173,38 @@ test("maps strict validation and no-availability errors", async () => {
       error: {
         code: "BOOKING_AVAILABILITY_NOT_FOUND",
         message: "No compatible appointment availability was found.",
+      },
+    });
+  });
+});
+
+test("maps an inaccessible vehicle to the controlled 404 response", async () => {
+  const harness = createHarness(async () => {
+    throw new DirectusError("DIRECTUS_VEHICLE_NOT_ACCESSIBLE");
+  });
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await postAvailability(baseUrl, validBody);
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "DIRECTUS_VEHICLE_NOT_ACCESSIBLE",
+        message: "The vehicle is not accessible.",
+      },
+    });
+  });
+});
+
+test("maps a missing slot-token secret to a controlled configuration error", async () => {
+  const harness = createHarness(async () => {
+    throw new BookingAvailabilityError("BOOKING_CONFIGURATION_ERROR");
+  });
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await postAvailability(baseUrl, validBody);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "BOOKING_CONFIGURATION_ERROR",
+        message: "Appointment booking is not configured.",
       },
     });
   });
