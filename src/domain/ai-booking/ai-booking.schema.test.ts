@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAppointmentAvailabilityRequestSchema } from "./ai-booking.schema.js";
+import {
+  AppointmentConfirmationRequestSchema,
+  BookingIdempotencyKeySchema,
+  createAppointmentAvailabilityRequestSchema,
+} from "./ai-booking.schema.js";
 
 const schema = createAppointmentAvailabilityRequestSchema("2026-08-10");
 
@@ -78,4 +82,47 @@ test("rejects malformed, impossible and past preferred dates", () => {
       false,
     );
   }
+});
+
+test("accepts and trims the strict appointment confirmation contract", () => {
+  assert.deepEqual(
+    AppointmentConfirmationRequestSchema.parse({
+      slot_token: " signed-token ",
+      problem_summary: "  Voyant moteur allumé avec vibrations.  ",
+      confirmation: true,
+    }),
+    {
+      slot_token: "signed-token",
+      problem_summary: "Voyant moteur allumé avec vibrations.",
+      confirmation: true,
+    },
+  );
+  assert.equal(
+    BookingIdempotencyKeySchema.parse(
+      "123e4567-e89b-42d3-a456-426614174000",
+    ),
+    "123e4567-e89b-42d3-a456-426614174000",
+  );
+});
+
+test("rejects unsafe confirmation bodies and invalid idempotency keys", () => {
+  const valid = {
+    slot_token: "signed-token",
+    problem_summary: "Voyant moteur allumé avec vibrations.",
+    confirmation: true,
+  } as const;
+  for (const invalid of [
+    { ...valid, confirmation: false },
+    { ...valid, customer_id: 99 },
+    { ...valid, status: "pending" },
+    { ...valid, requested_date: "2026-08-12" },
+    { ...valid, problem_summary: "<b>Diagnostic</b>" },
+    { ...valid, slot_token: "x".repeat(4_097) },
+  ]) {
+    assert.equal(
+      AppointmentConfirmationRequestSchema.safeParse(invalid).success,
+      false,
+    );
+  }
+  assert.equal(BookingIdempotencyKeySchema.safeParse("not-a-uuid").success, false);
 });

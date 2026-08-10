@@ -148,6 +148,50 @@ export const SecuredAppointmentAvailabilityResultSchema = z
   })
   .strict();
 
+export const AppointmentConfirmationRequestSchema = z
+  .object({
+    slot_token: z.string().trim().min(1).max(4_096),
+    problem_summary: z
+      .string()
+      .trim()
+      .min(10)
+      .max(1_000)
+      .refine((value) => !/[<>]/.test(value), "HTML is not accepted.")
+      .refine(
+        (value) =>
+          !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value),
+        "Control characters are not accepted.",
+      ),
+    confirmation: z.literal(true),
+  })
+  .strict();
+
+export const BookingIdempotencyKeySchema = z.uuid();
+
+export const AppointmentConfirmationResultSchema = z
+  .object({
+    appointment_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    status: z.literal("pending"),
+    vehicle: z
+      .object({
+        id: BookingVehicleIdSchema,
+        label: z.string().trim().min(1).max(201),
+      })
+      .strict(),
+    service_type: BookingServiceTypeSchema,
+    workshop: z
+      .object({
+        id: z.literal(ALLOWED_WORKSHOP_IDS),
+        name: z.string().trim().min(1),
+      })
+      .strict(),
+    showroom: BookingShowroomSchema,
+    requested_date: IsoDateSchema,
+    requested_time: IsoTimeSchema,
+    problem_summary: z.string().trim().min(10).max(1_000),
+  })
+  .strict();
+
 export type BookingShowroom = z.infer<typeof BookingShowroomSchema>;
 export type AppointmentAvailabilityOption = z.infer<
   typeof AppointmentAvailabilityOptionSchema
@@ -161,6 +205,12 @@ export type SecuredAppointmentAvailabilityOption = z.infer<
 >;
 export type SecuredAppointmentAvailabilityResult = z.infer<
   typeof SecuredAppointmentAvailabilityResultSchema
+>;
+export type AppointmentConfirmationRequest = z.infer<
+  typeof AppointmentConfirmationRequestSchema
+>;
+export type AppointmentConfirmationResult = z.infer<
+  typeof AppointmentConfirmationResultSchema
 >;
 
 export const BookingTimeZoneSchema = z.literal(BOOKING_TIME_ZONE);

@@ -3,6 +3,11 @@ import {
   createDirectusBookingAvailabilityService,
   type DirectusBookingAvailabilityQuery,
 } from "./directus-booking-availability.service.js";
+import {
+  createDirectusAppointmentWriteClient,
+  type DirectusAppointmentCreateInput,
+} from "./directus-appointment-write-client.js";
+import { createDirectusBookingVehicleService } from "./directus-booking-vehicle.service.js";
 import { createDirectusCatalogService } from "./directus-catalog.service.js";
 import { DirectusError } from "./directus-errors.js";
 import { createDirectusHttpClient } from "./directus-http-client.js";
@@ -22,6 +27,19 @@ const configuredVehicleContextService = createDirectusVehicleContextService(
   }),
 );
 
+const configuredBookingVehicleService = createDirectusBookingVehicleService(
+  createDirectusHttpClient({
+    baseUrl: env.DIRECTUS_URL,
+    timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+  }),
+);
+
+const configuredAppointmentWriteClient =
+  createDirectusAppointmentWriteClient({
+    baseUrl: env.DIRECTUS_URL,
+    timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+  });
+
 const configuredBookingAvailabilityService =
   createDirectusBookingAvailabilityService(
     createDirectusHttpClient({
@@ -37,6 +55,20 @@ export const getDirectusVehicleContext = (
   accessToken: string,
   vehicleId: unknown,
 ) => configuredVehicleContextService.getVehicleContext(accessToken, vehicleId);
+
+export const getDirectusBookingVehicleIdentity = (
+  accessToken: string,
+  vehicleId: unknown,
+) =>
+  configuredBookingVehicleService.getBookingVehicleIdentity(
+    accessToken,
+    vehicleId,
+  );
+
+export const createDirectusAppointment = (
+  accessToken: string,
+  input: DirectusAppointmentCreateInput,
+) => configuredAppointmentWriteClient.createAppointment(accessToken, input);
 
 export const getDirectusBookingAvailabilitySnapshot = async (
   query: DirectusBookingAvailabilityQuery,
@@ -65,10 +97,23 @@ export const getDirectusBookingAvailabilitySnapshot = async (
 };
 
 export {
+  DirectusAppointmentCreateInputSchema,
+  createDirectusAppointmentWriteClient,
+  type DirectusAppointmentCreateInput,
+  type DirectusAppointmentWriteClient,
+  type DirectusAppointmentWriteClientConfig,
+  type DirectusCreatedAppointment,
+} from "./directus-appointment-write-client.js";
+export {
   createDirectusBookingAvailabilityService,
   type DirectusBookingAvailabilityQuery,
   type DirectusBookingAvailabilityService,
 } from "./directus-booking-availability.service.js";
+export {
+  createDirectusBookingVehicleService,
+  type DirectusBookingVehicleIdentity,
+  type DirectusBookingVehicleService,
+} from "./directus-booking-vehicle.service.js";
 
 export {
   createDirectusCatalogService,

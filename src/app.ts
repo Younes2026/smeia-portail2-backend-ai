@@ -7,7 +7,9 @@ import {
   type AnalyzeAiDiagnosticUseCase,
 } from "./application/ai-diagnostic/index.js";
 import {
+  confirmAppointmentUseCase,
   searchAppointmentAvailabilityUseCase,
+  type ConfirmAppointmentUseCase,
   type SearchAppointmentAvailabilityUseCase,
 } from "./application/ai-booking/index.js";
 import { env } from "./config/env.js";
@@ -27,6 +29,7 @@ export type AppDependencies = {
   analyzeDiagnostic?: AnalyzeAiDiagnosticUseCase;
   rateLimiter?: AiRateLimiter;
   searchAppointmentAvailability?: SearchAppointmentAvailabilityUseCase;
+  confirmAppointment?: ConfirmAppointmentUseCase;
   bookingRateLimiter?: AiRateLimiter;
 };
 
@@ -65,6 +68,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       searchAvailability:
         dependencies.searchAppointmentAvailability ??
         searchAppointmentAvailabilityUseCase,
+      confirmAppointment:
+        dependencies.confirmAppointment ?? confirmAppointmentUseCase,
       rateLimiter:
         dependencies.bookingRateLimiter ?? createAiRateLimiter(),
     }),

@@ -1,7 +1,10 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ZodError } from "zod";
 
-import { BookingAvailabilityError } from "../application/ai-booking/index.js";
+import {
+  BookingAvailabilityError,
+  BookingConfirmationError,
+} from "../application/ai-booking/index.js";
 import { DirectusError } from "../infrastructure/directus/index.js";
 import { AiDiagnosticError } from "../infrastructure/openai/index.js";
 
@@ -93,6 +96,25 @@ export const errorHandler: ErrorRequestHandler = (
       return 502;
     })();
     sendError(response, status, error.code, error.message);
+    return;
+  }
+
+  if (error instanceof BookingConfirmationError) {
+    const statusByCode = {
+      INVALID_SLOT_TOKEN: 400,
+      SLOT_OFFER_EXPIRED: 409,
+      SLOT_NO_LONGER_AVAILABLE: 409,
+      IDEMPOTENCY_CONFLICT: 409,
+      BOOKING_CONTEXT_INVALID: 422,
+      APPOINTMENT_CREATION_FAILED: 502,
+      BOOKING_CONFIGURATION_UNAVAILABLE: 503,
+    } as const;
+    sendError(
+      response,
+      statusByCode[error.code],
+      error.code,
+      error.message,
+    );
     return;
   }
 

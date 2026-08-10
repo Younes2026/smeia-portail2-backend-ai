@@ -19,9 +19,17 @@ export {
   type DirectusBookingAvailabilitySnapshot,
 } from "./ai-booking.availability.js";
 export {
+  checkBookingSlotAvailability,
+  type BookingSlotCheckResult,
+  type BookingSlotSelection,
+} from "./ai-booking.confirmation.js";
+export {
+  AppointmentConfirmationRequestSchema,
+  AppointmentConfirmationResultSchema,
   AppointmentAvailabilityOptionSchema,
   AppointmentAvailabilityResultSchema,
   BookingServiceTypeSchema,
+  BookingIdempotencyKeySchema,
   BookingShowroomSchema,
   BookingVehicleIdSchema,
   BookingTimeZoneSchema,
@@ -35,6 +43,8 @@ export {
   type AppointmentAvailabilityOption,
   type AppointmentAvailabilityRequest,
   type AppointmentAvailabilityResult,
+  type AppointmentConfirmationRequest,
+  type AppointmentConfirmationResult,
   type BookingServiceType,
   type BookingShowroom,
   type SecuredAppointmentAvailabilityOption,
