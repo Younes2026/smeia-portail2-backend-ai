@@ -15,6 +15,7 @@
     "test:directus:live": "tsx scripts/test-directus-catalog-live.ts",
     "test:ai-endpoint:image:live": "tsx scripts/test-ai-diagnostic-endpoint-image-live.ts",
     "test:ai-endpoint:live": "tsx scripts/test-ai-diagnostic-endpoint-live.ts",
+    "test:ai-booking:availability:live": "tsx scripts/test-ai-booking-availability-live.ts",
     "test:ai:image:live": "tsx scripts/test-ai-diagnostic-image-live.ts",
     "test:ai:live": "tsx scripts/test-ai-diagnostic-live.ts",
     "typecheck": "tsc --noEmit"
