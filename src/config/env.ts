@@ -20,6 +20,7 @@ const envSchema = z.object({
     .min(100)
     .max(30_000)
     .default(5_000),
+  DIRECTUS_BOOKING_TOKEN: optionalSecretSchema,
   OPENAI_API_KEY: optionalSecretSchema,
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
   OPENAI_TIMEOUT_MS: z.coerce
@@ -45,6 +46,7 @@ const parsedEnv = envSchema.safeParse({
   PORT: process.env.PORT,
   DIRECTUS_URL: process.env.DIRECTUS_URL,
   DIRECTUS_TIMEOUT_MS: process.env.DIRECTUS_TIMEOUT_MS,
+  DIRECTUS_BOOKING_TOKEN: process.env.DIRECTUS_BOOKING_TOKEN,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
   OPENAI_TIMEOUT_MS: process.env.OPENAI_TIMEOUT_MS,

@@ -6,6 +6,10 @@ import {
   analyzeAiDiagnosticUseCase,
   type AnalyzeAiDiagnosticUseCase,
 } from "./application/ai-diagnostic/index.js";
+import {
+  searchAppointmentAvailabilityUseCase,
+  type SearchAppointmentAvailabilityUseCase,
+} from "./application/ai-booking/index.js";
 import { env } from "./config/env.js";
 import {
   createAiRateLimiter,
@@ -16,11 +20,14 @@ import {
   notFoundHandler,
 } from "./middleware/error-handler.js";
 import { healthRouter } from "./routes/health.routes.js";
+import { createAiBookingRouter } from "./routes/ai-booking.routes.js";
 import { createAiDiagnosticRouter } from "./routes/ai-diagnostic.routes.js";
 
 export type AppDependencies = {
   analyzeDiagnostic?: AnalyzeAiDiagnosticUseCase;
   rateLimiter?: AiRateLimiter;
+  searchAppointmentAvailability?: SearchAppointmentAvailabilityUseCase;
+  bookingRateLimiter?: AiRateLimiter;
 };
 
 const allowedOrigins = new Set(env.CORS_ORIGINS);
@@ -51,6 +58,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       analyzeDiagnostic:
         dependencies.analyzeDiagnostic ?? analyzeAiDiagnosticUseCase,
       rateLimiter: dependencies.rateLimiter ?? createAiRateLimiter(),
+    }),
+  );
+  createdApp.use(
+    createAiBookingRouter({
+      searchAvailability:
+        dependencies.searchAppointmentAvailability ??
+        searchAppointmentAvailabilityUseCase,
+      rateLimiter:
+        dependencies.bookingRateLimiter ?? createAiRateLimiter(),
     }),
   );
   createdApp.use(express.json({ limit: "1mb" }));

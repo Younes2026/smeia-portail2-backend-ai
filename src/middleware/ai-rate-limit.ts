@@ -92,6 +92,8 @@ export const createAiRateLimiter = (
 
 export const createAiRateLimitMiddleware = (
   rateLimiter: AiRateLimiter,
+  errorCode = "AI_RATE_LIMIT_EXCEEDED",
+  errorMessage = "Too many AI diagnostic requests.",
 ): RequestHandler =>
   (_request, response, next) => {
     const accessToken = getDirectusAccessToken(response);
@@ -102,8 +104,8 @@ export const createAiRateLimitMiddleware = (
       next(
         new HttpError(
           429,
-          "AI_RATE_LIMIT_EXCEEDED",
-          "Too many AI diagnostic requests.",
+          errorCode,
+          errorMessage,
         ),
       );
       return;

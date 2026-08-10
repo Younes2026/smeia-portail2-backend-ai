@@ -1,6 +1,7 @@
 import { env } from "../../config/env.js";
 import {
   AiDiagnosticModelOutputSchema,
+  getCompatibleWorkshopIdsForServiceCode,
   type AiDiagnosticModelOutput,
   validateAiDiagnosticBusinessRules,
 } from "../../domain/ai-diagnostic/index.js";
@@ -39,15 +40,6 @@ type AiDiagnosticServiceDependencies = {
 export type AiDiagnosticService = {
   analyzeAiDiagnostic(input: unknown): Promise<AiDiagnosticModelOutput>;
 };
-
-const compatibleWorkshopIdsByServiceCode = new Map<
-  string,
-  ReadonlySet<number>
->([
-  ["MEC-DIAG B", new Set([1, 2])],
-  ["CAR", new Set([3])],
-  ["PEINT", new Set([4])],
-]);
 
 const createInvalidOutputError = (
   reason: AiInvalidOutputReason,
@@ -105,7 +97,8 @@ const validateCatalogSelections = (
   const compatibleWorkshopIds =
     suggestedService?.code === null || suggestedService?.code === undefined
       ? undefined
-      : compatibleWorkshopIdsByServiceCode.get(suggestedService.code);
+      : getCompatibleWorkshopIdsForServiceCode(suggestedService.code) ??
+        undefined;
 
   if (
     compatibleWorkshopIds === undefined ||

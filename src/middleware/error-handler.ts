@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ZodError } from "zod";
 
+import { BookingAvailabilityError } from "../application/ai-booking/index.js";
 import { DirectusError } from "../infrastructure/directus/index.js";
 import { AiDiagnosticError } from "../infrastructure/openai/index.js";
 
@@ -72,6 +73,13 @@ export const errorHandler: ErrorRequestHandler = (
 
   if (error instanceof HttpError) {
     sendError(response, error.status, error.code, error.message);
+    return;
+  }
+
+  if (error instanceof BookingAvailabilityError) {
+    const status =
+      error.code === "BOOKING_AVAILABILITY_NOT_FOUND" ? 404 : 502;
+    sendError(response, status, error.code, error.message);
     return;
   }
 
