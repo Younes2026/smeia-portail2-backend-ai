@@ -11,6 +11,8 @@ import {
 
 const MONDAY = "2026-08-10";
 const TUESDAY = "2026-08-11";
+const WINDOW_END = "2026-09-08";
+const AFTER_WINDOW = "2026-09-09";
 
 const createWorkshop = (
   id: 1 | 2 | 3 | 4,
@@ -86,6 +88,7 @@ test("generates 30-minute working-day slots and returns at most three", () => {
     createRequest(),
     createSnapshot(),
     MONDAY,
+    WINDOW_END,
   );
 
   assert.equal(result.preferred_date_available, true);
@@ -102,6 +105,7 @@ test("never proposes an elapsed slot on the current Casablanca date", () => {
     createRequest(),
     createSnapshot(),
     MONDAY,
+    WINDOW_END,
     { date: MONDAY, time: "09:10:00" },
   );
 
@@ -114,6 +118,7 @@ test("requires an open working day, a schedule and enough daily capacity", () =>
       createRequest(),
       createSnapshot({ schedules: [] }),
       MONDAY,
+      WINDOW_END,
     ).options.length,
     0,
   );
@@ -132,6 +137,7 @@ test("requires an open working day, a schedule and enough daily capacity", () =>
         ],
       }),
       MONDAY,
+      WINDOW_END,
     ).options.length,
     0,
   );
@@ -142,6 +148,7 @@ test("requires an open working day, a schedule and enough daily capacity", () =>
         workshops: [createWorkshop(1, { working_days: ["tuesday"] })],
       }),
       MONDAY,
+      WINDOW_END,
     ).options.length,
     0,
   );
@@ -154,6 +161,7 @@ test("requires an open working day, a schedule and enough daily capacity", () =>
         createRequest(),
         createSnapshot({ workshops: [createWorkshop(1, overrides)] }),
         MONDAY,
+        WINDOW_END,
       ).options.length,
       0,
     );
@@ -172,7 +180,12 @@ test("uses the dynamic active-resource count for simultaneous capacity", () => {
     ],
   });
   assert.equal(
-    findAppointmentAvailability(createRequest(), fourResources, MONDAY)
+    findAppointmentAvailability(
+      createRequest(),
+      fourResources,
+      MONDAY,
+      WINDOW_END,
+    )
       .options[0]?.requested_time,
     "08:30:00",
   );
@@ -200,6 +213,7 @@ test("uses the dynamic active-resource count for simultaneous capacity", () => {
       createRequest({ service_type_id: 4, workshop_ids: [3] }),
       workshopThree,
       MONDAY,
+      WINDOW_END,
     ).options[0]?.requested_time,
     "08:30:00",
   );
@@ -214,14 +228,24 @@ test("pending and confirmed occupy while cancelled and completed do not", () => 
     ],
   });
   assert.equal(
-    findAppointmentAvailability(createRequest(), snapshot, MONDAY).options[0]
+    findAppointmentAvailability(
+      createRequest(),
+      snapshot,
+      MONDAY,
+      WINDOW_END,
+    ).options[0]
       ?.requested_time,
     "08:00:00",
   );
 
   snapshot.appointments = fillSlot(1, 1, "confirmed");
   assert.equal(
-    findAppointmentAvailability(createRequest(), snapshot, MONDAY).options[0]
+    findAppointmentAvailability(
+      createRequest(),
+      snapshot,
+      MONDAY,
+      WINDOW_END,
+    ).options[0]
       ?.requested_time,
     "08:30:00",
   );
@@ -251,12 +275,17 @@ test("falls forward when the preferred date is full", () => {
     appointments: occupiedMonday,
   });
 
-  const result = findAppointmentAvailability(createRequest(), snapshot, MONDAY);
+  const result = findAppointmentAvailability(
+    createRequest(),
+    snapshot,
+    MONDAY,
+    WINDOW_END,
+  );
   assert.equal(result.preferred_date_available, false);
   assert.equal(result.options[0]?.requested_date, TUESDAY);
 });
 
-test("prioritizes the preferred period and then client workshop order", () => {
+test("afternoon returns no morning slot and preserves client workshop order", () => {
   const snapshot = createSnapshot({
     workshops: [createWorkshop(1), createWorkshop(2)],
     schedules: [
@@ -282,7 +311,68 @@ test("prioritizes the preferred period and then client workshop order", () => {
     }),
     snapshot,
     MONDAY,
+    WINDOW_END,
+  );
+  assert.ok(
+    result.options.every((option) => option.requested_time >= "12:00:00"),
   );
   assert.equal(result.options[0]?.requested_time, "12:00:00");
   assert.equal(result.options[0]?.workshop_id, 2);
+});
+
+test("morning returns no afternoon slot", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ preferred_period: "morning" }),
+    createSnapshot(),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.options.length, 3);
+  assert.ok(
+    result.options.every((option) => option.requested_time < "12:00:00"),
+  );
+});
+
+test("any allows both morning and afternoon slots", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ preferred_period: "any" }),
+    createSnapshot({
+      workshops: [
+        createWorkshop(1, {
+          opening_time: "11:30:00",
+          closing_time: "13:00:00",
+        }),
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(
+    result.options.map((option) => option.requested_time),
+    ["11:30:00", "12:00:00", "12:30:00"],
+  );
+});
+
+test("does not search alternatives after the global window end", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ preferred_date: WINDOW_END }),
+    createSnapshot({
+      schedules: [
+        {
+          workshop_id: 1,
+          date: AFTER_WINDOW,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+      ],
+    }),
+    WINDOW_END,
+    WINDOW_END,
+  );
+
+  assert.equal(result.preferred_date_available, false);
+  assert.deepEqual(result.options, []);
 });

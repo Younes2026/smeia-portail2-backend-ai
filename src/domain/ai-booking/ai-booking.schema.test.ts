@@ -7,7 +7,10 @@ import {
   createAppointmentAvailabilityRequestSchema,
 } from "./ai-booking.schema.js";
 
-const schema = createAppointmentAvailabilityRequestSchema("2026-08-10");
+const schema = createAppointmentAvailabilityRequestSchema(
+  "2026-08-10",
+  "2026-09-08",
+);
 
 test("accepts the strict availability request and applies defaults", () => {
   assert.deepEqual(
@@ -82,6 +85,27 @@ test("rejects malformed, impossible and past preferred dates", () => {
       false,
     );
   }
+});
+
+test("accepts the last booking-window date and rejects later dates", () => {
+  assert.equal(
+    schema.safeParse({
+      vehicle_id: 14,
+      service_type_id: 2,
+      workshop_ids: [1],
+      preferred_date: "2026-09-08",
+    }).success,
+    true,
+  );
+  assert.equal(
+    schema.safeParse({
+      vehicle_id: 14,
+      service_type_id: 2,
+      workshop_ids: [1],
+      preferred_date: "2026-09-09",
+    }).success,
+    false,
+  );
 });
 
 test("accepts and trims the strict appointment confirmation contract", () => {

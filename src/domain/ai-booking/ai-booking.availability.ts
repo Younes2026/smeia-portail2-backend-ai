@@ -1,6 +1,5 @@
 import type { AppointmentAvailabilityRequest } from "./ai-booking.schema.js";
 import {
-  BOOKING_SEARCH_WINDOW_DAYS,
   BOOKING_TIME_ZONE,
   MAX_BOOKING_OPTIONS,
   OCCUPYING_APPOINTMENT_STATUSES,
@@ -141,7 +140,6 @@ const formatOptionLabel = (
 
 type RankedOption = {
   dateRank: number;
-  periodRank: number;
   timeRank: number;
   workshopRank: number;
   option: AppointmentAvailabilityOption;
@@ -151,6 +149,7 @@ export const findAppointmentAvailability = (
   request: AppointmentAvailabilityRequest,
   snapshot: DirectusBookingAvailabilitySnapshot,
   startDate: string,
+  endDate: string,
   notBefore?: { date: string; time: string },
 ): AppointmentAvailabilityResult => {
   const requestedWorkshopOrder = new Map(
@@ -183,8 +182,11 @@ export const findAppointmentAvailability = (
   }
 
   const rankedOptions: RankedOption[] = [];
-  for (let dateRank = 0; dateRank < BOOKING_SEARCH_WINDOW_DAYS; dateRank += 1) {
-    const date = addIsoDateDays(startDate, dateRank);
+  for (
+    let date = startDate, dateRank = 0;
+    date <= endDate;
+    date = addIsoDateDays(date, 1), dateRank += 1
+  ) {
     const weekday = getWeekday(date);
 
     for (const workshop of snapshot.workshops) {
@@ -223,6 +225,9 @@ export const findAppointmentAvailability = (
         slotSeconds += intervalSeconds
       ) {
         const requestedTime = secondsToTime(slotSeconds);
+        if (!isPreferredPeriod(requestedTime, request.preferred_period)) {
+          continue;
+        }
         if (
           notBefore !== undefined &&
           date === notBefore.date &&
@@ -238,12 +243,6 @@ export const findAppointmentAvailability = (
 
         rankedOptions.push({
           dateRank,
-          periodRank: isPreferredPeriod(
-            requestedTime,
-            request.preferred_period,
-          )
-            ? 0
-            : 1,
           timeRank: slotSeconds,
           workshopRank,
           option: {
@@ -263,7 +262,6 @@ export const findAppointmentAvailability = (
   rankedOptions.sort(
     (left, right) =>
       left.dateRank - right.dateRank ||
-      left.periodRank - right.periodRank ||
       left.timeRank - right.timeRank ||
       left.workshopRank - right.workshopRank,
   );

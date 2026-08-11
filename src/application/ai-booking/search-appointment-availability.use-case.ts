@@ -89,28 +89,35 @@ export const createSearchAppointmentAvailabilityUseCase = (
 
     const now = dependencies.now();
     const today = getCasablancaIsoDate(now);
-    const request = createAppointmentAvailabilityRequestSchema(today).parse(
-      rawRequest,
+    const globalEndDate = addIsoDateDays(
+      today,
+      BOOKING_SEARCH_WINDOW_DAYS - 1,
     );
+    const request = createAppointmentAvailabilityRequestSchema(
+      today,
+      globalEndDate,
+    ).parse(rawRequest);
     dependencies.slotTokenService.assertConfigured();
     await dependencies.getVehicleContext(accessToken, request.vehicle_id);
     const catalogs = await dependencies.getAiCatalogs(accessToken);
     const service = validateRequestedCatalogContext(request, catalogs);
 
     const startDate = request.preferred_date ?? today;
-    const endDate = addIsoDateDays(
-      startDate,
-      BOOKING_SEARCH_WINDOW_DAYS - 1,
-    );
     const snapshot = await dependencies.getBookingSnapshot({
       workshopIds: [...request.workshop_ids],
       startDate,
-      endDate,
+      endDate: globalEndDate,
     });
-    const result = findAppointmentAvailability(request, snapshot, startDate, {
-      date: today,
-      time: getCasablancaIsoTime(now),
-    });
+    const result = findAppointmentAvailability(
+      request,
+      snapshot,
+      startDate,
+      globalEndDate,
+      {
+        date: today,
+        time: getCasablancaIsoTime(now),
+      },
+    );
 
     if (result.options.length === 0) {
       throw new BookingAvailabilityError("BOOKING_AVAILABILITY_NOT_FOUND");

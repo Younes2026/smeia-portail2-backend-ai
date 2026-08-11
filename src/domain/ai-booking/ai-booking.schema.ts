@@ -70,16 +70,26 @@ const availabilityRequestBaseSchema = z
 
 export const createAppointmentAvailabilityRequestSchema = (
   minimumDate: string,
+  maximumDate: string,
 ) =>
   availabilityRequestBaseSchema.superRefine((request, context) => {
-    if (
-      request.preferred_date !== null &&
-      request.preferred_date < minimumDate
-    ) {
+    if (request.preferred_date === null) {
+      return;
+    }
+
+    if (request.preferred_date < minimumDate) {
       context.addIssue({
         code: "custom",
         path: ["preferred_date"],
         message: "The preferred date must not be in the past.",
+      });
+    }
+
+    if (request.preferred_date > maximumDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["preferred_date"],
+        message: "The preferred date exceeds the booking search window.",
       });
     }
   });

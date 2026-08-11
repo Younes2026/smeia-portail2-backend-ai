@@ -122,7 +122,10 @@ const createHarness = (
   const searchAppointmentAvailability: SearchAppointmentAvailabilityUseCase =
     searchOverride ??
     (async (accessToken, body) => {
-      createAppointmentAvailabilityRequestSchema("2026-08-10").parse(body);
+      createAppointmentAvailabilityRequestSchema(
+        "2026-08-10",
+        "2026-09-08",
+      ).parse(body);
       calls.push({ accessToken, body });
       return availability;
     });

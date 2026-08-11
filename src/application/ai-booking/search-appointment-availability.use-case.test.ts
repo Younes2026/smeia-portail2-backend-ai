@@ -120,7 +120,7 @@ const validRequest = {
   preferred_period: "morning",
 } as const;
 
-test("verifies the vehicle with the client token before reading availability", async () => {
+test("uses the client token and stops the search at the global window end", async () => {
   const harness = createHarness();
   await harness.useCase(CLIENT_TOKEN, validRequest);
 
@@ -132,7 +132,7 @@ test("verifies the vehicle with the client token before reading availability", a
     {
       workshopIds: [1],
       startDate: "2026-08-12",
-      endDate: "2026-09-10",
+      endDate: "2026-09-08",
     },
   ]);
 });
@@ -223,6 +223,32 @@ test("returns a controlled not-found error when no slot exists", async () => {
       assert.ok(error instanceof BookingAvailabilityError);
       assert.equal(error.code, "BOOKING_AVAILABILITY_NOT_FOUND");
       assert.equal(error.message.includes(CLIENT_TOKEN), false);
+      return true;
+    },
+  );
+});
+
+test("returns a controlled not-found error when the requested period has no slot", async () => {
+  const workshop = snapshot.workshops[0];
+  assert.ok(workshop);
+  const harness = createHarness({
+    bookingSnapshot: {
+      ...snapshot,
+      workshops: [
+        {
+          ...workshop,
+          opening_time: "13:00:00",
+          closing_time: "17:00:00",
+        },
+      ],
+    },
+  });
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, validRequest),
+    (error: unknown) => {
+      assert.ok(error instanceof BookingAvailabilityError);
+      assert.equal(error.code, "BOOKING_AVAILABILITY_NOT_FOUND");
       return true;
     },
   );
