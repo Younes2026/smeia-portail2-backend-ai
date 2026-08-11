@@ -103,16 +103,18 @@ export const createSearchAppointmentAvailabilityUseCase = (
     const service = validateRequestedCatalogContext(request, catalogs);
 
     const startDate = request.preferred_date ?? today;
+    const endDate =
+      request.result_mode === "day_slots" ? startDate : globalEndDate;
     const snapshot = await dependencies.getBookingSnapshot({
       workshopIds: [...request.workshop_ids],
       startDate,
-      endDate: globalEndDate,
+      endDate,
     });
     const result = findAppointmentAvailability(
       request,
       snapshot,
       startDate,
-      globalEndDate,
+      endDate,
       {
         date: today,
         time: getCasablancaIsoTime(now),

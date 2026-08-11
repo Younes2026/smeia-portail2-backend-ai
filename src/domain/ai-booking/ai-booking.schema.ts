@@ -6,8 +6,9 @@ import {
 } from "../ai-diagnostic/index.js";
 import {
   BOOKING_PERIODS,
+  BOOKING_RESULT_MODES,
   BOOKING_TIME_ZONE,
-  MAX_BOOKING_OPTIONS,
+  MAX_DAY_SLOT_OPTIONS,
 } from "./ai-booking.constants.js";
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,6 +66,7 @@ const availabilityRequestBaseSchema = z
       ),
     preferred_date: IsoDateSchema.nullable().optional().default(null),
     preferred_period: z.enum(BOOKING_PERIODS).optional().default("any"),
+    result_mode: z.enum(BOOKING_RESULT_MODES).optional().default("suggestions"),
   })
   .strict();
 
@@ -73,6 +75,18 @@ export const createAppointmentAvailabilityRequestSchema = (
   maximumDate: string,
 ) =>
   availabilityRequestBaseSchema.superRefine((request, context) => {
+    if (
+      request.result_mode === "day_slots" &&
+      request.preferred_date === null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["preferred_date"],
+        message: "A preferred date is required in day-slots mode.",
+      });
+      return;
+    }
+
     if (request.preferred_date === null) {
       return;
     }
@@ -123,7 +137,9 @@ export const AppointmentAvailabilityOptionSchema = z
 export const AppointmentAvailabilityResultSchema = z
   .object({
     preferred_date_available: z.boolean(),
-    options: z.array(AppointmentAvailabilityOptionSchema).max(MAX_BOOKING_OPTIONS),
+    options: z
+      .array(AppointmentAvailabilityOptionSchema)
+      .max(MAX_DAY_SLOT_OPTIONS),
   })
   .strict();
 
@@ -154,7 +170,7 @@ export const SecuredAppointmentAvailabilityResultSchema = z
     preferred_date_available: z.boolean(),
     options: z
       .array(SecuredAppointmentAvailabilityOptionSchema)
-      .max(MAX_BOOKING_OPTIONS),
+      .max(MAX_DAY_SLOT_OPTIONS),
   })
   .strict();
 

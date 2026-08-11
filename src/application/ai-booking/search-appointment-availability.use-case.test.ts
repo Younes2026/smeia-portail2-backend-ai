@@ -171,6 +171,38 @@ test("returns the service name and one signed token for each of at most three op
   );
 });
 
+test("day-slots reads one date and signs every returned option", async () => {
+  const harness = createHarness();
+  const result = await harness.useCase(CLIENT_TOKEN, {
+    ...validRequest,
+    preferred_period: "any",
+    result_mode: "day_slots",
+  });
+  const verifier = createBookingSlotTokenService({
+    secret: SLOT_SECRET,
+    now: () => TODAY,
+  });
+
+  assert.deepEqual(harness.snapshotQueries, [
+    {
+      workshopIds: [1],
+      startDate: "2026-08-12",
+      endDate: "2026-08-12",
+    },
+  ]);
+  assert.equal(result.preferred_date_available, true);
+  assert.equal(result.options.length, 18);
+  assert.ok(
+    result.options.every(
+      (option) =>
+        option.requested_date === "2026-08-12" &&
+        option.slot_token.length > 0 &&
+        verifier.verify(option.slot_token).requested_time ===
+          option.requested_time,
+    ),
+  );
+});
+
 test("rejects an inaccessible vehicle before catalog or occupancy reads", async () => {
   const harness = createHarness({
     async getVehicleContext() {
@@ -207,7 +239,7 @@ test("rejects workshop/service incompatibility before reading occupancy", async 
   assert.equal(harness.snapshotQueries.length, 0);
 });
 
-test("returns a controlled not-found error when no slot exists", async () => {
+test("returns a controlled not-found error when no day slot exists", async () => {
   const harness = createHarness({
     bookingSnapshot: {
       workshops: [],
@@ -218,7 +250,10 @@ test("returns a controlled not-found error when no slot exists", async () => {
   });
 
   await assert.rejects(
-    harness.useCase(CLIENT_TOKEN, validRequest),
+    harness.useCase(CLIENT_TOKEN, {
+      ...validRequest,
+      result_mode: "day_slots",
+    }),
     (error: unknown) => {
       assert.ok(error instanceof BookingAvailabilityError);
       assert.equal(error.code, "BOOKING_AVAILABILITY_NOT_FOUND");

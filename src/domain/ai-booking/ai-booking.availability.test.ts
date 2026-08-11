@@ -44,6 +44,7 @@ const createRequest = (
   workshop_ids: [1],
   preferred_date: MONDAY,
   preferred_period: "any",
+  result_mode: "suggestions",
   ...overrides,
 });
 
@@ -375,4 +376,198 @@ test("does not search alternatives after the global window end", () => {
 
   assert.equal(result.preferred_date_available, false);
   assert.deepEqual(result.options, []);
+});
+
+test("day-slots never returns an alternative date", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ result_mode: "day_slots" }),
+    createSnapshot({
+      schedules: [
+        {
+          workshop_id: 1,
+          date: TUESDAY,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.preferred_date_available, false);
+  assert.deepEqual(result.options, []);
+});
+
+test("day-slots morning returns every morning slot", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ result_mode: "day_slots", preferred_period: "morning" }),
+    createSnapshot(),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.preferred_date_available, true);
+  assert.equal(result.options.length, 8);
+  assert.ok(
+    result.options.every((option) => option.requested_time < "12:00:00"),
+  );
+});
+
+test("day-slots afternoon returns every afternoon slot", () => {
+  const result = findAppointmentAvailability(
+    createRequest({
+      result_mode: "day_slots",
+      preferred_period: "afternoon",
+    }),
+    createSnapshot(),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.preferred_date_available, true);
+  assert.equal(result.options.length, 10);
+  assert.ok(
+    result.options.every((option) => option.requested_time >= "12:00:00"),
+  );
+});
+
+test("day-slots any returns every morning and afternoon slot", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ result_mode: "day_slots", preferred_period: "any" }),
+    createSnapshot(),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.options.length, 18);
+  assert.ok(
+    result.options.some((option) => option.requested_time < "12:00:00"),
+  );
+  assert.ok(
+    result.options.some((option) => option.requested_time >= "12:00:00"),
+  );
+});
+
+test("day-slots sorts by time and then deterministically by workshop", () => {
+  const result = findAppointmentAvailability(
+    createRequest({
+      result_mode: "day_slots",
+      workshop_ids: [2, 1],
+    }),
+    createSnapshot({
+      workshops: [
+        createWorkshop(2, {
+          opening_time: "08:00:00",
+          closing_time: "09:00:00",
+        }),
+        createWorkshop(1, {
+          opening_time: "08:00:00",
+          closing_time: "09:00:00",
+        }),
+      ],
+      schedules: [
+        {
+          workshop_id: 2,
+          date: MONDAY,
+          total_capacity_hours: 9,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 9,
+        },
+        {
+          workshop_id: 1,
+          date: MONDAY,
+          total_capacity_hours: 9,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 9,
+        },
+      ],
+      resources: [
+        { workshop_id: 2, active: true, daily_hours: 9 },
+        { workshop_id: 1, active: true, daily_hours: 9 },
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(
+    result.options.map((option) => [
+      option.requested_time,
+      option.workshop_id,
+    ]),
+    [
+      ["08:00:00", 1],
+      ["08:00:00", 2],
+      ["08:30:00", 1],
+      ["08:30:00", 2],
+    ],
+  );
+});
+
+test("day-slots removes duplicate workshop, date and time options", () => {
+  const workshop = createWorkshop(1, {
+    opening_time: "08:00:00",
+    closing_time: "09:00:00",
+  });
+  const result = findAppointmentAvailability(
+    createRequest({ result_mode: "day_slots" }),
+    createSnapshot({ workshops: [workshop, { ...workshop }] }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(
+    result.options.map((option) => option.requested_time),
+    ["08:00:00", "08:30:00"],
+  );
+});
+
+test("day-slots applies the fixed limit of forty after sorting and deduplication", () => {
+  const result = findAppointmentAvailability(
+    createRequest({ result_mode: "day_slots", workshop_ids: [2, 1] }),
+    createSnapshot({
+      workshops: [
+        createWorkshop(2, { slot_interval_minutes: 15 }),
+        createWorkshop(1, { slot_interval_minutes: 15 }),
+      ],
+      schedules: [
+        {
+          workshop_id: 2,
+          date: MONDAY,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+        {
+          workshop_id: 1,
+          date: MONDAY,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+      ],
+      resources: [
+        { workshop_id: 2, active: true, daily_hours: 9 },
+        { workshop_id: 1, active: true, daily_hours: 9 },
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.options.length, 40);
+  assert.deepEqual(
+    result.options.slice(0, 4).map((option) => [
+      option.requested_time,
+      option.workshop_id,
+    ]),
+    [
+      ["08:00:00", 1],
+      ["08:00:00", 2],
+      ["08:15:00", 1],
+      ["08:15:00", 2],
+    ],
+  );
 });

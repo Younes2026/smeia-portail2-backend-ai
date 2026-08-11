@@ -2,6 +2,7 @@ import type { AppointmentAvailabilityRequest } from "./ai-booking.schema.js";
 import {
   BOOKING_TIME_ZONE,
   MAX_BOOKING_OPTIONS,
+  MAX_DAY_SLOT_OPTIONS,
   OCCUPYING_APPOINTMENT_STATUSES,
   type BOOKING_WEEKDAYS,
 } from "./ai-booking.constants.js";
@@ -152,6 +153,12 @@ export const findAppointmentAvailability = (
   endDate: string,
   notBefore?: { date: string; time: string },
 ): AppointmentAvailabilityResult => {
+  const searchStartDate =
+    request.result_mode === "day_slots" && request.preferred_date !== null
+      ? request.preferred_date
+      : startDate;
+  const searchEndDate =
+    request.result_mode === "day_slots" ? searchStartDate : endDate;
   const requestedWorkshopOrder = new Map(
     request.workshop_ids.map((workshopId, index) => [workshopId, index]),
   );
@@ -183,8 +190,8 @@ export const findAppointmentAvailability = (
 
   const rankedOptions: RankedOption[] = [];
   for (
-    let date = startDate, dateRank = 0;
-    date <= endDate;
+    let date = searchStartDate, dateRank = 0;
+    date <= searchEndDate;
     date = addIsoDateDays(date, 1), dateRank += 1
   ) {
     const weekday = getWeekday(date);
@@ -263,17 +270,37 @@ export const findAppointmentAvailability = (
     (left, right) =>
       left.dateRank - right.dateRank ||
       left.timeRank - right.timeRank ||
-      left.workshopRank - right.workshopRank,
+      (request.result_mode === "day_slots"
+        ? left.option.workshop_id - right.option.workshop_id
+        : left.workshopRank - right.workshopRank),
   );
 
-  const options = rankedOptions
-    .slice(0, MAX_BOOKING_OPTIONS)
+  const seenSlotKeys = new Set<string>();
+  const deduplicatedOptions =
+    request.result_mode === "day_slots"
+      ? rankedOptions.filter(({ option }) => {
+          const key = `${option.workshop_id}|${option.requested_date}|${option.requested_time}`;
+          if (seenSlotKeys.has(key)) {
+            return false;
+          }
+          seenSlotKeys.add(key);
+          return true;
+        })
+      : rankedOptions;
+  const maximumOptions =
+    request.result_mode === "day_slots"
+      ? MAX_DAY_SLOT_OPTIONS
+      : MAX_BOOKING_OPTIONS;
+  const options = deduplicatedOptions
+    .slice(0, maximumOptions)
     .map(({ option }) => option);
   const preferredDateAvailable =
-    request.preferred_date !== null &&
-    rankedOptions.some(
-      ({ option }) => option.requested_date === request.preferred_date,
-    );
+    request.result_mode === "day_slots"
+      ? options.length > 0
+      : request.preferred_date !== null &&
+        rankedOptions.some(
+          ({ option }) => option.requested_date === request.preferred_date,
+        );
 
   return AppointmentAvailabilityResultSchema.parse({
     preferred_date_available: preferredDateAvailable,

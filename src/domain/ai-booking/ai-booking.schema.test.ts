@@ -21,8 +21,56 @@ test("accepts the strict availability request and applies defaults", () => {
       workshop_ids: [1, 2],
       preferred_date: null,
       preferred_period: "any",
+      result_mode: "suggestions",
     },
   );
+});
+
+test("rejects an unsupported result mode and a client-supplied limit", () => {
+  for (const extra of [
+    { result_mode: "all" },
+    { result_mode: "day_slots", preferred_date: "2026-08-12", limit: 10 },
+  ]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        workshop_ids: [1],
+        ...extra,
+      }).success,
+      false,
+    );
+  }
+});
+
+test("requires a non-null preferred date in day-slots mode", () => {
+  for (const preferred_date of [undefined, null]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        workshop_ids: [1],
+        preferred_date,
+        result_mode: "day_slots",
+      }).success,
+      false,
+    );
+  }
+});
+
+test("rejects a day-slots date outside the global booking window", () => {
+  for (const preferred_date of ["2026-08-09", "2026-09-09"]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        workshop_ids: [1],
+        preferred_date,
+        result_mode: "day_slots",
+      }).success,
+      false,
+    );
+  }
 });
 
 test("rejects additional properties, unsupported IDs and duplicate workshops", () => {
