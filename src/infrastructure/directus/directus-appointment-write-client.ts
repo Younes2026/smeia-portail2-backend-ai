@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import {
   BookingPhysicalWorkshopIdSchema,
-  BookingShowroomIdSchema,
   BookingVehicleIdSchema,
   IsoDateSchema,
   IsoTimeSchema,
@@ -20,7 +19,6 @@ export const DirectusAppointmentCreateInputSchema = z
     vehicle_id: BookingVehicleIdSchema,
     service_type_id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
     workshop_id: BookingPhysicalWorkshopIdSchema,
-    showroom_id: BookingShowroomIdSchema,
     requested_date: IsoDateSchema,
     requested_time: IsoTimeSchema,
     comment: z.string().trim().min(10).max(1_000),

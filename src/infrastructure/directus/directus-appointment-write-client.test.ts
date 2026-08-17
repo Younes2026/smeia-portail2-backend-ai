@@ -11,7 +11,6 @@ const validInput = {
   vehicle_id: 14,
   service_type_id: 2 as const,
   workshop_id: 20,
-  showroom_id: 8,
   requested_date: "2026-08-12",
   requested_time: "09:30:00",
   comment: "Le voyant moteur reste allume.",
@@ -52,6 +51,7 @@ test("creates exactly one pending appointment with the client Bearer token", asy
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), validInput);
   for (const forbidden of [
     "status",
+    "showroom_id",
     "arrival_confirmed_at",
     "cancellation_reason",
     "repairs",
@@ -66,7 +66,7 @@ test("creates exactly one pending appointment with the client Bearer token", asy
   assert.deepEqual(result, { appointmentId: 123, status: "pending" });
 });
 
-test("refuses extra write fields before any request", async () => {
+test("refuses status and showroom fields before any request", async () => {
   let calls = 0;
   const client = createDirectusAppointmentWriteClient({
     baseUrl: "http://localhost:8055",
@@ -77,12 +77,14 @@ test("refuses extra write fields before any request", async () => {
     },
   });
 
-  await assert.rejects(
-    client.createAppointment(CLIENT_TOKEN, {
-      ...validInput,
-      status: "confirmed",
-    } as never),
-  );
+  for (const extraInput of [
+    { ...validInput, status: "confirmed" },
+    { ...validInput, showroom_id: 8 },
+  ]) {
+    await assert.rejects(
+      client.createAppointment(CLIENT_TOKEN, extraInput as never),
+    );
+  }
   assert.equal(calls, 0);
 });
 

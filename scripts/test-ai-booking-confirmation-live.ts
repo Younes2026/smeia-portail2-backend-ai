@@ -9,7 +9,7 @@ process.env.OPENAI_MAX_RETRIES = "0";
 const AVAILABILITY_PATH = "/api/ai/appointments/availability";
 const CONFIRMATION_PATH = "/api/ai/appointments/confirm";
 const PROBLEM_SUMMARY =
-  "Test intégration assistant IA - demande de diagnostic.";
+  "Test multisite Oujda - validation live de reservation.";
 
 const originalFetch: typeof fetch = globalThis.fetch.bind(globalThis);
 let directusOrigin = "";
@@ -124,10 +124,12 @@ const [
     AppointmentConfirmationResultSchema,
     SecuredAppointmentAvailabilityResultSchema,
   },
+  { BOOKING_SLOT_TOKEN_VERSION, createBookingSlotTokenService },
 ] = await Promise.all([
   import("../src/app.js"),
   import("../src/config/env.js"),
   import("../src/domain/ai-booking/index.js"),
+  import("../src/application/ai-booking/index.js"),
 ]);
 
 const directusUrl = new URL(env.DIRECTUS_URL);
@@ -167,9 +169,10 @@ const errorResponseSchema = z
 const availabilityRequestBody = {
   vehicle_id: 14,
   service_type_id: 2,
-  workshop_ids: [1, 2],
-  preferred_date: "2026-08-13",
-  preferred_period: "morning",
+  showroom_id: 8,
+  workshop_types: ["mecanique"],
+  preferred_date: "2026-08-18",
+  preferred_period: "any",
 } as const;
 
 const forbiddenConfirmationKeys = new Set([
@@ -275,6 +278,11 @@ const main = async () => {
     throw new Error("AI_BOOKING_SLOT_SECRET_MISSING");
   }
 
+  const slotTokenService = createBookingSlotTokenService({
+    secret: env.AI_BOOKING_SLOT_SECRET,
+    now: () => new Date(),
+  });
+
   const application = createApp();
   const server = application.listen(0, "127.0.0.1");
 
@@ -316,13 +324,24 @@ const main = async () => {
       throw new Error("LIVE_TEST_NO_AVAILABILITY_OPTION");
     }
     if (
+      Object.hasOwn(availabilityRequestBody, "workshop_ids") ||
       firstOption.service_type.id !== 2 ||
-      firstOption.service_type.name !== "Diagnostic" ||
-      (firstOption.workshop_id !== 1 && firstOption.workshop_id !== 2) ||
-      firstOption.showroom.id !== 1 ||
-      firstOption.showroom.name !== "Moulay Slimane"
+      firstOption.workshop_id !== 20 ||
+      firstOption.showroom.id !== 8
     ) {
       throw new Error("LIVE_TEST_INVALID_AVAILABILITY_OPTION");
+    }
+
+    const slotToken = slotTokenService.verify(firstOption.slot_token);
+    if (
+      slotToken.version !== BOOKING_SLOT_TOKEN_VERSION ||
+      slotToken.service_type_id !== 2 ||
+      slotToken.workshop_id !== 20 ||
+      slotToken.showroom_id !== 8 ||
+      slotToken.requested_date !== firstOption.requested_date ||
+      slotToken.requested_time !== firstOption.requested_time
+    ) {
+      throw new Error("LIVE_TEST_INVALID_SLOT_TOKEN");
     }
 
     const idempotencyKey = randomUUID();
@@ -359,11 +378,9 @@ const main = async () => {
       confirmation.status !== "pending" ||
       confirmation.vehicle.id !== 14 ||
       confirmation.service_type.id !== 2 ||
-      confirmation.service_type.name !== "Diagnostic" ||
-      (confirmation.workshop.id !== 1 && confirmation.workshop.id !== 2) ||
+      confirmation.workshop.id !== 20 ||
       confirmation.workshop.id !== firstOption.workshop_id ||
-      confirmation.showroom.id !== 1 ||
-      confirmation.showroom.name !== "Moulay Slimane" ||
+      confirmation.showroom.id !== 8 ||
       confirmation.requested_date !== firstOption.requested_date ||
       confirmation.requested_time !== firstOption.requested_time ||
       confirmation.problem_summary !== PROBLEM_SUMMARY ||
@@ -388,7 +405,24 @@ const main = async () => {
       throw new Error("LIVE_TEST_SECRET_EXPOSURE");
     }
 
-    console.log(JSON.stringify(confirmation, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          appointment_id: confirmation.appointment_id,
+          status: confirmation.status,
+          showroom_id: confirmation.showroom.id,
+          workshop_id: confirmation.workshop.id,
+          requested_date: confirmation.requested_date,
+          requested_time: confirmation.requested_time,
+          confirmation_call_count: localConfirmationPostCount,
+          appointment_created_count: directusAppointmentPostCount,
+          openai_call_count: openAiCallCount,
+          token_version: slotToken.version,
+        },
+        null,
+        2,
+      ),
+    );
   } finally {
     await closeServer(server);
   }

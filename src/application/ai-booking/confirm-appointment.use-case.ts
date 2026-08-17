@@ -223,7 +223,6 @@ export const createConfirmAppointmentUseCase = (
               vehicle_id: token.vehicle_id,
               service_type_id: token.service_type_id,
               workshop_id: token.workshop_id,
-              showroom_id: token.showroom_id,
               requested_date: token.requested_date,
               requested_time: token.requested_time,
               comment: request.problem_summary,

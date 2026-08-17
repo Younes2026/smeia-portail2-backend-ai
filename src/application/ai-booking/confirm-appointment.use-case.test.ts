@@ -172,13 +172,14 @@ test("revalidates the signed slot and creates an exact pending appointment", asy
         vehicle_id: 14,
         service_type_id: 2,
         workshop_id: 20,
-        showroom_id: 8,
         requested_date: "2026-08-12",
         requested_time: "09:30:00",
         comment: "Voyant moteur allume.",
       },
     },
   ]);
+  assert.equal(Object.hasOwn(harness.createdInputs[0]!.input, "showroom_id"), false);
+  assert.equal(Object.hasOwn(harness.createdInputs[0]!.input, "status"), false);
   assert.deepEqual(result, {
     appointment_id: 123,
     status: "pending",
