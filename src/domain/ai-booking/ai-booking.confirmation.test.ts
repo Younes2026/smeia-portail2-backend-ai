@@ -5,7 +5,8 @@ import type { DirectusBookingAvailabilitySnapshot } from "./ai-booking.availabil
 import { checkBookingSlotAvailability } from "./ai-booking.confirmation.js";
 
 const selection = {
-  workshop_id: 1 as const,
+  workshop_id: 20,
+  showroom_id: 8,
   requested_date: "2026-08-12",
   requested_time: "08:00:00",
   slot_interval_minutes: 30,
@@ -14,8 +15,9 @@ const selection = {
 const createSnapshot = (): DirectusBookingAvailabilitySnapshot => ({
   workshops: [
     {
-      id: 1,
-      name: "Atelier Rapide",
+      id: 20,
+      name: "Atelier Oujda",
+      workshop_type: "mecanique",
       opening_time: "08:00:00",
       closing_time: "17:00:00",
       working_days: ["wednesday"],
@@ -23,8 +25,8 @@ const createSnapshot = (): DirectusBookingAvailabilitySnapshot => ({
       active: true,
       client_bookable: true,
       showroom: {
-        id: 1,
-        name: "Moulay Slimane",
+        id: 8,
+        name: "Oujda",
         address: "Adresse test",
         city: "Casablanca",
         phone: "0000000000",
@@ -33,14 +35,14 @@ const createSnapshot = (): DirectusBookingAvailabilitySnapshot => ({
   ],
   schedules: [
     {
-      workshop_id: 1,
+      workshop_id: 20,
       date: "2026-08-12",
       total_capacity_hours: 9,
       used_capacity_hours: 0,
       remaining_capacity_hours: 9,
     },
   ],
-  resources: [{ workshop_id: 1, active: true, daily_hours: 9 }],
+  resources: [{ workshop_id: 20, active: true, daily_hours: 9 }],
   appointments: [],
 });
 
@@ -53,7 +55,16 @@ const check = (snapshot: DirectusBookingAvailabilitySnapshot) =>
 test("accepts an exact still-available booking slot", () => {
   const result = check(createSnapshot());
   assert.equal(result.status, "available");
-  assert.equal(result.status === "available" && result.workshop.id, 1);
+  assert.equal(result.status === "available" && result.workshop.id, 20);
+});
+
+test("rejects a showroom different from the signed selection", () => {
+  const snapshot = createSnapshot();
+  snapshot.workshops[0]!.showroom = {
+    ...snapshot.workshops[0]!.showroom,
+    id: 5,
+  };
+  assert.equal(check(snapshot).status, "invalid_context");
 });
 
 test("rejects an inactive, unbookable or interval-mismatched workshop context", () => {
@@ -93,7 +104,7 @@ test("rejects a slot with no active resource or full simultaneous capacity", () 
   const full = createSnapshot();
   full.appointments = [
     {
-      workshop_id: 1,
+      workshop_id: 20,
       requested_date: selection.requested_date,
       requested_time: selection.requested_time,
       status: "pending",

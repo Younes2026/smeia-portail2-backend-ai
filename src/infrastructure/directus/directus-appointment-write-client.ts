@@ -1,14 +1,13 @@
 import { z } from "zod";
 
 import {
+  BookingPhysicalWorkshopIdSchema,
+  BookingShowroomIdSchema,
   BookingVehicleIdSchema,
   IsoDateSchema,
   IsoTimeSchema,
 } from "../../domain/ai-booking/index.js";
-import {
-  ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
-} from "../../domain/ai-diagnostic/index.js";
+import { ALLOWED_SERVICE_TYPE_IDS } from "../../domain/ai-diagnostic/index.js";
 import {
   DirectusError,
   mapDirectusHttpStatus,
@@ -20,7 +19,8 @@ export const DirectusAppointmentCreateInputSchema = z
     customer_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     vehicle_id: BookingVehicleIdSchema,
     service_type_id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
-    workshop_id: z.literal(ALLOWED_WORKSHOP_IDS),
+    workshop_id: BookingPhysicalWorkshopIdSchema,
+    showroom_id: BookingShowroomIdSchema,
     requested_date: IsoDateSchema,
     requested_time: IsoTimeSchema,
     comment: z.string().trim().min(10).max(1_000),

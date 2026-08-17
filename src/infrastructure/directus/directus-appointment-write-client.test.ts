@@ -10,7 +10,8 @@ const validInput = {
   customer_id: 55,
   vehicle_id: 14,
   service_type_id: 2 as const,
-  workshop_id: 1 as const,
+  workshop_id: 20,
+  showroom_id: 8,
   requested_date: "2026-08-12",
   requested_time: "09:30:00",
   comment: "Le voyant moteur reste allume.",
@@ -51,7 +52,6 @@ test("creates exactly one pending appointment with the client Bearer token", asy
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), validInput);
   for (const forbidden of [
     "status",
-    "showroom_id",
     "arrival_confirmed_at",
     "cancellation_reason",
     "repairs",

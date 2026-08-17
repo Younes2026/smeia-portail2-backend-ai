@@ -13,7 +13,7 @@ const RESOLVED_WORKSHOP_FIELDS =
   "id,name,workshop_type,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone";
 const SYNTHETIC_DIAGNOSTIC_WORKSHOP_ID = Number.MAX_SAFE_INTEGER;
 
-const createHarness = (invalidWorkshops = false) => {
+const createHarness = (invalidWorkshops = false, showroomId = 8) => {
   const calls: Array<{
     endpoint: string;
     params: URLSearchParams;
@@ -29,12 +29,13 @@ const createHarness = (invalidWorkshops = false) => {
 
       if (endpoint === "/items/workshops") {
         return invalidWorkshops
-          ? { data: [{ id: 1, token: TECHNICAL_TOKEN }] }
+          ? { data: [{ id: 20, token: TECHNICAL_TOKEN }] }
           : {
               data: [
                 {
-                  id: 1,
-                  name: "Atelier Rapide",
+                  id: 20,
+                  name: "Atelier Oujda",
+                  workshop_type: "mecanique",
                   opening_time: "08:00",
                   closing_time: "17:00:00",
                   working_days: [
@@ -48,8 +49,8 @@ const createHarness = (invalidWorkshops = false) => {
                   active: true,
                   client_bookable: true,
                   showroom_id: {
-                    id: 1,
-                    name: "Moulay Slimane",
+                    id: showroomId,
+                    name: "Oujda",
                     address: "Adresse test",
                     city: "Casablanca",
                     phone: "0000000000",
@@ -63,7 +64,7 @@ const createHarness = (invalidWorkshops = false) => {
         return {
           data: [
             {
-              workshop_id: 1,
+              workshop_id: 20,
               date: "2026-08-12",
               total_capacity_hours: "36.0",
               used_capacity_hours: 1,
@@ -76,7 +77,7 @@ const createHarness = (invalidWorkshops = false) => {
       if (endpoint === "/items/resources") {
         return {
           data: [
-            { workshop_id: { id: 1 }, active: true, daily_hours: 9 },
+            { workshop_id: { id: 20 }, active: true, daily_hours: 9 },
           ],
         };
       }
@@ -85,7 +86,7 @@ const createHarness = (invalidWorkshops = false) => {
         return {
           data: [
             {
-              workshop_id: 1,
+              workshop_id: 20,
               requested_date: "2026-08-12",
               requested_time: "09:30",
               status: "pending",
@@ -460,7 +461,8 @@ test("reads only the four approved collections with minimal fields", async () =>
   const result = await harness.service.getBookingAvailabilitySnapshot(
     TECHNICAL_TOKEN,
     {
-      workshopIds: [1],
+      workshopIds: [20],
+      showroomId: 8,
       startDate: "2026-08-12",
       endDate: "2026-08-13",
     },
@@ -498,7 +500,7 @@ test("reads only the four approved collections with minimal fields", async () =>
   );
   assert.equal(
     fieldsByEndpoint.get("/items/workshops"),
-    "id,name,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone",
+    "id,name,workshop_type,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone",
   );
   const serializedQueries = harness.calls
     .map((call) => call.params.toString())
@@ -512,7 +514,14 @@ test("reads only the four approved collections with minimal fields", async () =>
   ]) {
     assert.equal(serializedQueries.toLowerCase().includes(forbidden.toLowerCase()), false);
   }
-  assert.equal(result.workshops[0]?.showroom.name, "Moulay Slimane");
+  const workshopCall = harness.calls.find(
+    (call) => call.endpoint === "/items/workshops",
+  );
+  assert.equal(workshopCall?.params.get("filter[showroom_id][_eq]"), "8");
+  assert.equal(workshopCall?.params.get("limit"), "2");
+  assert.equal(result.workshops[0]?.id, 20);
+  assert.equal(result.workshops[0]?.workshop_type, "mecanique");
+  assert.equal(result.workshops[0]?.showroom.name, "Oujda");
   assert.equal(result.workshops[0]?.opening_time, "08:00:00");
   assert.equal(result.appointments[0]?.requested_time, "09:30:00");
 });
@@ -520,7 +529,8 @@ test("reads only the four approved collections with minimal fields", async () =>
 test("limits schedule and appointment reads to the requested date range", async () => {
   const harness = createHarness();
   await harness.service.getBookingAvailabilitySnapshot(TECHNICAL_TOKEN, {
-    workshopIds: [1],
+    workshopIds: [20],
+    showroomId: 8,
     startDate: "2026-08-12",
     endDate: "2026-08-13",
   });
@@ -539,11 +549,26 @@ test("limits schedule and appointment reads to the requested date range", async 
   );
 });
 
+test("rejects a snapshot workshop returned for another showroom", async () => {
+  const harness = createHarness(false, 5);
+
+  await assertDirectusError(
+    harness.service.getBookingAvailabilitySnapshot(TECHNICAL_TOKEN, {
+      workshopIds: [20],
+      showroomId: 8,
+      startDate: "2026-08-12",
+      endDate: "2026-08-13",
+    }),
+    "DIRECTUS_INVALID_RESPONSE",
+  );
+});
+
 test("rejects malformed Directus data without exposing the technical token", async () => {
   const harness = createHarness(true);
   await assert.rejects(
     harness.service.getBookingAvailabilitySnapshot(TECHNICAL_TOKEN, {
-      workshopIds: [1],
+      workshopIds: [20],
+      showroomId: 8,
       startDate: "2026-08-12",
       endDate: "2026-08-13",
     }),

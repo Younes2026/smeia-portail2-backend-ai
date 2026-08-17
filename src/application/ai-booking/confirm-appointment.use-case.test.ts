@@ -4,7 +4,7 @@ import test from "node:test";
 import type { DirectusBookingAvailabilitySnapshot } from "../../domain/ai-booking/index.js";
 import {
   DirectusError,
-  type DirectusAiCatalogs,
+  type AvailableService,
   type DirectusAppointmentCreateInput,
 } from "../../infrastructure/directus/index.js";
 import { BookingConfirmationError } from "./booking-confirmation-errors.js";
@@ -19,20 +19,18 @@ const NOW = new Date("2026-08-10T12:00:00.000Z");
 const KEY_ONE = "00000000-0000-4000-8000-000000000001";
 const KEY_TWO = "00000000-0000-4000-8000-000000000002";
 
-const catalogs: DirectusAiCatalogs = {
-  available_services: [
-    { id: 2, name: "Diagnostic", code: "MEC-DIAG B" },
-  ],
-  available_workshops: [
-    { id: 1, name: "Atelier Rapide", workshop_type: "diagnostic" },
-  ],
+const service: AvailableService = {
+  id: 2,
+  name: "Diagnostic",
+  code: "MEC-DIAG B",
 };
 
 const baseSnapshot: DirectusBookingAvailabilitySnapshot = {
   workshops: [
     {
-      id: 1,
-      name: "Atelier Rapide",
+      id: 20,
+      name: "Atelier Oujda",
+      workshop_type: "mecanique",
       opening_time: "08:00:00",
       closing_time: "17:00:00",
       working_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -40,8 +38,8 @@ const baseSnapshot: DirectusBookingAvailabilitySnapshot = {
       active: true,
       client_bookable: true,
       showroom: {
-        id: 1,
-        name: "Moulay Slimane",
+        id: 8,
+        name: "Oujda",
         address: "Adresse test",
         city: "Casablanca",
         phone: "0000000000",
@@ -50,14 +48,14 @@ const baseSnapshot: DirectusBookingAvailabilitySnapshot = {
   ],
   schedules: [
     {
-      workshop_id: 1,
+      workshop_id: 20,
       date: "2026-08-12",
       total_capacity_hours: 9,
       used_capacity_hours: 0,
       remaining_capacity_hours: 9,
     },
   ],
-  resources: [{ workshop_id: 1, active: true, daily_hours: 9 }],
+  resources: [{ workshop_id: 20, active: true, daily_hours: 9 }],
   appointments: [],
 };
 
@@ -74,7 +72,7 @@ type HarnessOptions = {
     customerId: number;
     label: string;
   }>;
-  getCatalogs?: () => Promise<DirectusAiCatalogs>;
+  getService?: () => Promise<AvailableService>;
   create?: (
     accessToken: string,
     input: DirectusAppointmentCreateInput,
@@ -112,8 +110,8 @@ const createHarness = (options: HarnessOptions = {}) => {
         label: "BMW X1",
       };
     },
-    async getAiCatalogs() {
-      return options.getCatalogs?.() ?? catalogs;
+    async getAvailableService() {
+      return options.getService?.() ?? service;
     },
     async getBookingSnapshot(query) {
       snapshotQueries.push(query);
@@ -131,7 +129,8 @@ const createHarness = (options: HarnessOptions = {}) => {
   const slotToken = slotTokenService.create({
     vehicle_id: 14,
     service_type_id: 2,
-    workshop_id: 1,
+    workshop_id: 20,
+    showroom_id: 8,
     requested_date: "2026-08-12",
     requested_time: "09:30:00",
     slot_interval_minutes: 30,
@@ -159,7 +158,8 @@ test("revalidates the signed slot and creates an exact pending appointment", asy
   ]);
   assert.deepEqual(harness.snapshotQueries, [
     {
-      workshopIds: [1],
+      workshopIds: [20],
+      showroomId: 8,
       startDate: "2026-08-12",
       endDate: "2026-08-12",
     },
@@ -171,7 +171,8 @@ test("revalidates the signed slot and creates an exact pending appointment", asy
         customer_id: 55,
         vehicle_id: 14,
         service_type_id: 2,
-        workshop_id: 1,
+        workshop_id: 20,
+        showroom_id: 8,
         requested_date: "2026-08-12",
         requested_time: "09:30:00",
         comment: "Voyant moteur allume.",
@@ -183,7 +184,7 @@ test("revalidates the signed slot and creates an exact pending appointment", asy
     status: "pending",
     vehicle: { id: 14, label: "BMW X1" },
     service_type: { id: 2, name: "Diagnostic" },
-    workshop: { id: 1, name: "Atelier Rapide" },
+    workshop: { id: 20, name: "Atelier Oujda" },
     showroom: baseSnapshot.workshops[0]?.showroom,
     requested_date: "2026-08-12",
     requested_time: "09:30:00",
@@ -237,7 +238,8 @@ test("rejects tampered and expired offers before creating", async () => {
   const expiredToken = expiredTokenService.create({
     vehicle_id: 14,
     service_type_id: 2,
-    workshop_id: 1,
+    workshop_id: 20,
+    showroom_id: 8,
     requested_date: "2026-08-12",
     requested_time: "09:30:00",
     slot_interval_minutes: 30,
@@ -258,10 +260,7 @@ test("rejects tampered and expired offers before creating", async () => {
 
 test("rejects changed catalog context and unavailable slots without creating", async () => {
   const contextHarness = createHarness({
-    getCatalogs: async () => ({
-      available_services: [],
-      available_workshops: [],
-    }),
+    getService: async () => ({ id: 2, name: "Diagnostic", code: "PEINT" }),
   });
   await assert.rejects(
     contextHarness.useCase(
@@ -280,7 +279,7 @@ test("rejects changed catalog context and unavailable slots without creating", a
       ...baseSnapshot,
       appointments: [
         {
-          workshop_id: 1,
+          workshop_id: 20,
           requested_date: "2026-08-12",
           requested_time: "09:30:00",
           status: "pending",
@@ -299,6 +298,39 @@ test("rejects changed catalog context and unavailable slots without creating", a
       error.code === "SLOT_NO_LONGER_AVAILABLE",
   );
   assert.equal(fullHarness.createdInputs.length, 0);
+});
+
+test("rejects a validly signed token whose showroom no longer matches Directus", async () => {
+  const harness = createHarness();
+  const otherShowroomTokenService = createBookingSlotTokenService({
+    secret: SLOT_SECRET,
+    now: () => NOW,
+  });
+  const token = otherShowroomTokenService.create({
+    vehicle_id: 14,
+    service_type_id: 2,
+    workshop_id: 20,
+    showroom_id: 5,
+    requested_date: "2026-08-12",
+    requested_time: "09:30:00",
+    slot_interval_minutes: 30,
+  }).slotToken;
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, KEY_ONE, confirmationBody(token)),
+    (error: unknown) =>
+      error instanceof BookingConfirmationError &&
+      error.code === "BOOKING_CONTEXT_INVALID",
+  );
+  assert.deepEqual(harness.snapshotQueries, [
+    {
+      workshopIds: [20],
+      showroomId: 5,
+      startDate: "2026-08-12",
+      endDate: "2026-08-12",
+    },
+  ]);
+  assert.equal(harness.createdInputs.length, 0);
 });
 
 test("rejects inactive, closed and capacity-invalid contexts without creating", async () => {
@@ -390,8 +422,8 @@ test("serializes concurrent confirmations for the same last place", async () => 
     async getBookingVehicleIdentity() {
       return { vehicleId: 14, customerId: 55, label: "BMW X1" };
     },
-    async getAiCatalogs() {
-      return catalogs;
+    async getAvailableService() {
+      return service;
     },
     async getBookingSnapshot() {
       return { ...baseSnapshot, appointments: [...appointments] };
@@ -400,7 +432,7 @@ test("serializes concurrent confirmations for the same last place", async () => 
       creates += 1;
       await new Promise<void>((resolve) => setImmediate(resolve));
       appointments.push({
-        workshop_id: 1,
+        workshop_id: 20,
         requested_date: "2026-08-12",
         requested_time: "09:30:00",
         status: "pending",
@@ -412,7 +444,8 @@ test("serializes concurrent confirmations for the same last place", async () => 
   const token = slotTokenService.create({
     vehicle_id: 14,
     service_type_id: 2,
-    workshop_id: 1,
+    workshop_id: 20,
+    showroom_id: 8,
     requested_date: "2026-08-12",
     requested_time: "09:30:00",
     slot_interval_minutes: 30,

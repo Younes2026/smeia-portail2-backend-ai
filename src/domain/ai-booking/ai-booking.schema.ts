@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
 } from "../ai-diagnostic/index.js";
 import {
   BOOKING_PERIODS,
@@ -21,6 +21,20 @@ export const BookingVehicleIdSchema = z
   .int()
   .positive()
   .max(Number.MAX_SAFE_INTEGER);
+
+export const BookingPhysicalWorkshopIdSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
+
+export const BookingShowroomIdSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
+
+export const BookingWorkshopTypeSchema = z.enum(ALLOWED_WORKSHOP_TYPES);
 
 export const isValidIsoDate = (value: string) => {
   if (!isoDatePattern.test(value)) {
@@ -56,13 +70,14 @@ const availabilityRequestBaseSchema = z
   .object({
     vehicle_id: BookingVehicleIdSchema,
     service_type_id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
-    workshop_ids: z
-      .array(z.literal(ALLOWED_WORKSHOP_IDS))
+    showroom_id: BookingShowroomIdSchema,
+    workshop_types: z
+      .array(BookingWorkshopTypeSchema)
       .min(1)
       .max(2)
       .refine(
-        (ids) => new Set(ids).size === ids.length,
-        "Workshop IDs must be unique.",
+        (types) => new Set(types).size === types.length,
+        "Workshop types must be unique.",
       ),
     preferred_date: IsoDateSchema.nullable().optional().default(null),
     preferred_period: z.enum(BOOKING_PERIODS).optional().default("any"),
@@ -114,7 +129,7 @@ export type AppointmentAvailabilityRequest = z.infer<
 
 export const BookingShowroomSchema = z
   .object({
-    id: z.number().int().positive(),
+    id: BookingShowroomIdSchema,
     name: z.string().trim().min(1),
     address: z.string().trim().min(1).nullable(),
     city: z.string().trim().min(1).nullable(),
@@ -124,7 +139,7 @@ export const BookingShowroomSchema = z
 
 export const AppointmentAvailabilityOptionSchema = z
   .object({
-    workshop_id: z.literal(ALLOWED_WORKSHOP_IDS),
+    workshop_id: BookingPhysicalWorkshopIdSchema,
     workshop_name: z.string().trim().min(1),
     showroom: BookingShowroomSchema,
     requested_date: IsoDateSchema,
@@ -155,7 +170,7 @@ export const SecuredAppointmentAvailabilityOptionSchema = z
     slot_token: z.string().trim().min(1),
     expires_at: IsoDateTimeSchema,
     service_type: BookingServiceTypeSchema,
-    workshop_id: z.literal(ALLOWED_WORKSHOP_IDS),
+    workshop_id: BookingPhysicalWorkshopIdSchema,
     workshop_name: z.string().trim().min(1),
     showroom: BookingShowroomSchema,
     requested_date: IsoDateSchema,
@@ -207,7 +222,7 @@ export const AppointmentConfirmationResultSchema = z
     service_type: BookingServiceTypeSchema,
     workshop: z
       .object({
-        id: z.literal(ALLOWED_WORKSHOP_IDS),
+        id: BookingPhysicalWorkshopIdSchema,
         name: z.string().trim().min(1),
       })
       .strict(),
@@ -219,6 +234,7 @@ export const AppointmentConfirmationResultSchema = z
   .strict();
 
 export type BookingShowroom = z.infer<typeof BookingShowroomSchema>;
+export type BookingWorkshopType = z.infer<typeof BookingWorkshopTypeSchema>;
 export type AppointmentAvailabilityOption = z.infer<
   typeof AppointmentAvailabilityOptionSchema
 >;

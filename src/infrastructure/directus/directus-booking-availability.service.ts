@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import {
-  ALLOWED_WORKSHOP_IDS,
   ALLOWED_WORKSHOP_TYPES,
   type AiDiagnosticWorkshopType,
 } from "../../domain/ai-diagnostic/index.js";
@@ -24,12 +23,12 @@ const PAGE_SIZE = 200;
 const MAX_RESOURCE_ROWS = 1_000;
 const MAX_APPOINTMENT_ROWS = 10_000;
 
-const workshopIdSchema = z.literal(ALLOWED_WORKSHOP_IDS);
 const positiveSafeIntegerSchema = z
   .number()
   .int()
   .positive()
   .max(Number.MAX_SAFE_INTEGER);
+const workshopIdSchema = positiveSafeIntegerSchema;
 const workshopTypeSchema = z.enum(ALLOWED_WORKSHOP_TYPES);
 
 export const DirectusWorkshopResolutionQuerySchema = z
@@ -125,19 +124,7 @@ const directusResolvedWorkshopSchema = z
   })
   .strict();
 
-const directusWorkshopSchema = z
-  .object({
-    id: workshopIdSchema,
-    name: z.string().trim().min(1),
-    opening_time: directusTimeSchema,
-    closing_time: directusTimeSchema,
-    working_days: workingDaysSchema,
-    slot_interval_minutes: z.number().int().positive().max(24 * 60),
-    active: z.boolean(),
-    client_bookable: z.boolean(),
-    showroom_id: directusShowroomSchema,
-  })
-  .strict();
+const directusWorkshopSchema = directusResolvedWorkshopSchema;
 
 const directusScheduleSchema = z
   .object({
@@ -180,7 +167,8 @@ const appointmentsResponseSchema = createResponseSchema(
 );
 
 export type DirectusBookingAvailabilityQuery = {
-  workshopIds: Array<1 | 2 | 3 | 4>;
+  workshopIds: number[];
+  showroomId: number;
   startDate: string;
   endDate: string;
 };
@@ -375,9 +363,13 @@ export const createDirectusBookingAvailabilityService = (
       query.startDate > query.endDate ||
       rangeDayCount < 1 ||
       rangeDayCount > BOOKING_SEARCH_WINDOW_DAYS ||
+      !positiveSafeIntegerSchema.safeParse(query.showroomId).success ||
       query.workshopIds.length < 1 ||
       query.workshopIds.length > 2 ||
-      new Set(query.workshopIds).size !== query.workshopIds.length
+      new Set(query.workshopIds).size !== query.workshopIds.length ||
+      query.workshopIds.some(
+        (workshopId) => !workshopIdSchema.safeParse(workshopId).success,
+      )
     ) {
       throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
     }
@@ -385,13 +377,14 @@ export const createDirectusBookingAvailabilityService = (
     const workshopParams = new URLSearchParams([
       [
         "fields",
-        "id,name,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone",
+        "id,name,workshop_type,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone",
       ],
       ["filter[id][_in]", query.workshopIds.join(",")],
+      ["filter[showroom_id][_eq]", String(query.showroomId)],
       ["filter[active][_eq]", "true"],
       ["filter[client_bookable][_eq]", "true"],
       ["sort", "id"],
-      ["limit", String(query.workshopIds.length)],
+      ["limit", String(query.workshopIds.length + 1)],
     ]);
 
     const scheduleParams = createCommonFilters(
@@ -454,8 +447,13 @@ export const createDirectusBookingAvailabilityService = (
     const schedules = parsePayload(schedulesResponseSchema, schedulesPayload);
     const requestedWorkshopIds = new Set<number>(query.workshopIds);
     if (
+      directusWorkshops.length !== query.workshopIds.length ||
       directusWorkshops.some(
-        (workshop) => !requestedWorkshopIds.has(workshop.id),
+        (workshop) =>
+          !requestedWorkshopIds.has(workshop.id) ||
+          workshop.showroom_id.id !== query.showroomId ||
+          !workshop.active ||
+          !workshop.client_bookable,
       )
     ) {
       throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
@@ -483,18 +481,31 @@ export const createDirectusBookingAvailabilityService = (
       scheduleKeys.add(key);
     }
 
-    const workshops: BookingWorkshop[] = directusWorkshops.map(
-      (workshop) => ({
-        id: workshop.id,
-        name: workshop.name,
-        opening_time: workshop.opening_time,
-        closing_time: workshop.closing_time,
-        working_days: workshop.working_days as BookingWeekday[],
-        slot_interval_minutes: workshop.slot_interval_minutes,
-        active: workshop.active,
-        client_bookable: workshop.client_bookable,
-        showroom: workshop.showroom_id,
-      }),
+    const directusWorkshopById = new Map(
+      directusWorkshops.map((workshop) => [workshop.id, workshop]),
+    );
+    if (directusWorkshopById.size !== query.workshopIds.length) {
+      throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    }
+    const workshops: BookingWorkshop[] = query.workshopIds.map(
+      (workshopId) => {
+        const workshop = directusWorkshopById.get(workshopId);
+        if (workshop === undefined) {
+          throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+        }
+        return {
+          id: workshop.id,
+          name: workshop.name,
+          workshop_type: workshop.workshop_type,
+          opening_time: workshop.opening_time,
+          closing_time: workshop.closing_time,
+          working_days: workshop.working_days as BookingWeekday[],
+          slot_interval_minutes: workshop.slot_interval_minutes,
+          active: workshop.active,
+          client_bookable: workshop.client_bookable,
+          showroom: workshop.showroom_id,
+        };
+      },
     );
 
     return {

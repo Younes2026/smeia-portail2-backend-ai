@@ -15,11 +15,13 @@ const WINDOW_END = "2026-09-08";
 const AFTER_WINDOW = "2026-09-09";
 
 const createWorkshop = (
-  id: 1 | 2 | 3 | 4,
+  id: number,
   overrides: Partial<BookingWorkshop> = {},
 ): BookingWorkshop => ({
   id,
   name: `Atelier ${id}`,
+  workshop_type:
+    id === 1 ? "diagnostic" : id === 2 ? "mecanique" : "carrosserie",
   opening_time: "08:00:00",
   closing_time: "17:00:00",
   working_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -27,8 +29,8 @@ const createWorkshop = (
   active: true,
   client_bookable: true,
   showroom: {
-    id,
-    name: `Showroom ${id}`,
+    id: 1,
+    name: "Showroom 1",
     address: "Adresse test",
     city: "Casablanca",
     phone: "0000000000",
@@ -41,7 +43,8 @@ const createRequest = (
 ): AppointmentAvailabilityRequest => ({
   vehicle_id: 14,
   service_type_id: 2,
-  workshop_ids: [1],
+  showroom_id: 1,
+  workshop_types: ["diagnostic"],
   preferred_date: MONDAY,
   preferred_period: "any",
   result_mode: "suggestions",
@@ -62,7 +65,7 @@ const createSnapshot = (
     },
   ],
   resources: Array.from({ length: 4 }, () => ({
-    workshop_id: 1 as const,
+    workshop_id: 1,
     active: true,
     daily_hours: 9,
   })),
@@ -71,7 +74,7 @@ const createSnapshot = (
 });
 
 const fillSlot = (
-  workshopId: 1 | 2 | 3 | 4,
+  workshopId: number,
   count: number,
   status: string,
   date = MONDAY,
@@ -169,6 +172,39 @@ test("requires an open working day, a schedule and enough daily capacity", () =>
   }
 });
 
+test("never returns an option from another showroom", () => {
+  const foreignWorkshop = createWorkshop(2, {
+    workshop_type: "mecanique",
+    showroom: {
+      id: 5,
+      name: "Tanger",
+      address: "Adresse test",
+      city: "Tanger",
+      phone: "0000000000",
+    },
+  });
+  const result = findAppointmentAvailability(
+    createRequest({ workshop_types: ["mecanique"] }),
+    createSnapshot({
+      workshops: [foreignWorkshop],
+      schedules: [
+        {
+          workshop_id: 2,
+          date: MONDAY,
+          total_capacity_hours: 9,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 9,
+        },
+      ],
+      resources: [{ workshop_id: 2, active: true, daily_hours: 9 }],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(result.options, []);
+});
+
 test("uses the dynamic active-resource count for simultaneous capacity", () => {
   const fourResources = createSnapshot({
     resources: [
@@ -211,7 +247,11 @@ test("uses the dynamic active-resource count for simultaneous capacity", () => {
   });
   assert.equal(
     findAppointmentAvailability(
-      createRequest({ service_type_id: 4, workshop_ids: [3] }),
+      createRequest({
+        service_type_id: 4,
+        showroom_id: 1,
+        workshop_types: ["carrosserie"],
+      }),
       workshopThree,
       MONDAY,
       WINDOW_END,
@@ -286,7 +326,7 @@ test("falls forward when the preferred date is full", () => {
   assert.equal(result.options[0]?.requested_date, TUESDAY);
 });
 
-test("afternoon returns no morning slot and preserves client workshop order", () => {
+test("afternoon returns no morning slot and preserves requested type order", () => {
   const snapshot = createSnapshot({
     workshops: [createWorkshop(1), createWorkshop(2)],
     schedules: [
@@ -307,7 +347,7 @@ test("afternoon returns no morning slot and preserves client workshop order", ()
 
   const result = findAppointmentAvailability(
     createRequest({
-      workshop_ids: [2, 1],
+      workshop_types: ["mecanique", "diagnostic"],
       preferred_period: "afternoon",
     }),
     snapshot,
@@ -450,11 +490,11 @@ test("day-slots any returns every morning and afternoon slot", () => {
   );
 });
 
-test("day-slots sorts by time and then deterministically by workshop", () => {
+test("day-slots sorts by time and then by requested workshop type", () => {
   const result = findAppointmentAvailability(
     createRequest({
       result_mode: "day_slots",
-      workshop_ids: [2, 1],
+      workshop_types: ["mecanique", "diagnostic"],
     }),
     createSnapshot({
       workshops: [
@@ -498,10 +538,10 @@ test("day-slots sorts by time and then deterministically by workshop", () => {
       option.workshop_id,
     ]),
     [
-      ["08:00:00", 1],
       ["08:00:00", 2],
-      ["08:30:00", 1],
+      ["08:00:00", 1],
       ["08:30:00", 2],
+      ["08:30:00", 1],
     ],
   );
 });
@@ -526,7 +566,10 @@ test("day-slots removes duplicate workshop, date and time options", () => {
 
 test("day-slots applies the fixed limit of forty after sorting and deduplication", () => {
   const result = findAppointmentAvailability(
-    createRequest({ result_mode: "day_slots", workshop_ids: [2, 1] }),
+    createRequest({
+      result_mode: "day_slots",
+      workshop_types: ["mecanique", "diagnostic"],
+    }),
     createSnapshot({
       workshops: [
         createWorkshop(2, { slot_interval_minutes: 15 }),
@@ -564,10 +607,10 @@ test("day-slots applies the fixed limit of forty after sorting and deduplication
       option.workshop_id,
     ]),
     [
-      ["08:00:00", 1],
       ["08:00:00", 2],
-      ["08:15:00", 1],
+      ["08:00:00", 1],
       ["08:15:00", 2],
+      ["08:15:00", 1],
     ],
   );
 });

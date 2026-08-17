@@ -14,7 +14,8 @@ const ISSUED_AT = new Date("2026-08-10T12:00:00.000Z");
 const claims = {
   vehicle_id: 14,
   service_type_id: 2 as const,
-  workshop_id: 1 as const,
+  workshop_id: 20,
+  showroom_id: 8,
   requested_date: "2026-08-12",
   requested_time: "09:30:00",
   slot_interval_minutes: 30,
@@ -91,6 +92,7 @@ test("keeps the signed payload strict and free of PII or secrets", () => {
     "requested_date",
     "requested_time",
     "service_type_id",
+    "showroom_id",
     "slot_interval_minutes",
     "vehicle_id",
     "version",
@@ -145,11 +147,12 @@ test("rejects an expired token", () => {
 test("rejects a wrong version and additional payload properties", () => {
   const expiration = Math.floor(ISSUED_AT.getTime() / 1_000) + 600;
   const { service } = createHarness();
+  const { showroom_id: _showroomId, ...versionOneClaims } = claims;
 
   expectTokenError(
     () =>
       service.verify(
-        signRawPayload({ version: 2, expiration, ...claims }),
+        signRawPayload({ version: 1, expiration, ...versionOneClaims }),
       ),
     "BOOKING_SLOT_TOKEN_INVALID",
   );

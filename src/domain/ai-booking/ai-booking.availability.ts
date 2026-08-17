@@ -11,13 +11,15 @@ import {
   type AppointmentAvailabilityOption,
   type AppointmentAvailabilityResult,
   type BookingShowroom,
+  type BookingWorkshopType,
 } from "./ai-booking.schema.js";
 
 export type BookingWeekday = (typeof BOOKING_WEEKDAYS)[number];
 
 export type BookingWorkshop = {
-  id: 1 | 2 | 3 | 4;
+  id: number;
   name: string;
+  workshop_type: BookingWorkshopType;
   opening_time: string;
   closing_time: string;
   working_days: BookingWeekday[];
@@ -28,7 +30,7 @@ export type BookingWorkshop = {
 };
 
 export type BookingSchedule = {
-  workshop_id: 1 | 2 | 3 | 4;
+  workshop_id: number;
   date: string;
   total_capacity_hours: number;
   used_capacity_hours: number;
@@ -36,13 +38,13 @@ export type BookingSchedule = {
 };
 
 export type BookingResource = {
-  workshop_id: 1 | 2 | 3 | 4;
+  workshop_id: number;
   active: boolean;
   daily_hours: number | null;
 };
 
 export type BookingAppointment = {
-  workshop_id: 1 | 2 | 3 | 4;
+  workshop_id: number;
   requested_date: string;
   requested_time: string;
   status: string;
@@ -160,7 +162,7 @@ export const findAppointmentAvailability = (
   const searchEndDate =
     request.result_mode === "day_slots" ? searchStartDate : endDate;
   const requestedWorkshopOrder = new Map(
-    request.workshop_ids.map((workshopId, index) => [workshopId, index]),
+    request.workshop_types.map((workshopType, index) => [workshopType, index]),
   );
   const schedulesByWorkshopAndDate = new Map(
     snapshot.schedules.map((schedule) => [
@@ -197,9 +199,10 @@ export const findAppointmentAvailability = (
     const weekday = getWeekday(date);
 
     for (const workshop of snapshot.workshops) {
-      const workshopRank = requestedWorkshopOrder.get(workshop.id);
+      const workshopRank = requestedWorkshopOrder.get(workshop.workshop_type);
       if (
         workshopRank === undefined ||
+        workshop.showroom.id !== request.showroom_id ||
         !workshop.active ||
         !workshop.client_bookable ||
         !workshop.working_days.includes(weekday)
@@ -270,9 +273,7 @@ export const findAppointmentAvailability = (
     (left, right) =>
       left.dateRank - right.dateRank ||
       left.timeRank - right.timeRank ||
-      (request.result_mode === "day_slots"
-        ? left.option.workshop_id - right.option.workshop_id
-        : left.workshopRank - right.workshopRank),
+      left.workshopRank - right.workshopRank,
   );
 
   const seenSlotKeys = new Set<string>();

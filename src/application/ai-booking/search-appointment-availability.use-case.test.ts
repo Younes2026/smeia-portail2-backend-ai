@@ -4,8 +4,10 @@ import test from "node:test";
 import type { DirectusBookingAvailabilitySnapshot } from "../../domain/ai-booking/index.js";
 import {
   DirectusError,
+  type AvailableService,
   type DirectusAiCatalogs,
   type DirectusVehicleContext,
+  type ResolvedBookingWorkshop,
 } from "../../infrastructure/directus/index.js";
 import { BookingAvailabilityError } from "./booking-errors.js";
 import { createBookingSlotTokenService } from "./booking-slot-token.service.js";
@@ -41,11 +43,31 @@ const catalogs: DirectusAiCatalogs = {
   ],
 };
 
+const resolvedWorkshop: ResolvedBookingWorkshop = {
+  id: 20,
+  name: "Atelier Oujda",
+  workshop_type: "mecanique",
+  opening_time: "08:00:00",
+  closing_time: "17:00:00",
+  working_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+  slot_interval_minutes: 30,
+  active: true,
+  client_bookable: true,
+  showroom: {
+    id: 8,
+    name: "Oujda",
+    address: "Adresse test",
+    city: "Oujda",
+    phone: "0000000000",
+  },
+};
+
 const snapshot: DirectusBookingAvailabilitySnapshot = {
   workshops: [
     {
-      id: 1,
-      name: "Atelier Rapide",
+      id: 20,
+      name: "Atelier Oujda",
+      workshop_type: "mecanique",
       opening_time: "08:00:00",
       closing_time: "17:00:00",
       working_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
@@ -53,8 +75,8 @@ const snapshot: DirectusBookingAvailabilitySnapshot = {
       active: true,
       client_bookable: true,
       showroom: {
-        id: 1,
-        name: "Moulay Slimane",
+        id: 8,
+        name: "Oujda",
         address: "Adresse test",
         city: "Casablanca",
         phone: "0000000000",
@@ -63,14 +85,14 @@ const snapshot: DirectusBookingAvailabilitySnapshot = {
   ],
   schedules: [
     {
-      workshop_id: 1,
+      workshop_id: 20,
       date: "2026-08-12",
       total_capacity_hours: 36,
       used_capacity_hours: 0,
       remaining_capacity_hours: 36,
     },
   ],
-  resources: [{ workshop_id: 1, active: true, daily_hours: 9 }],
+  resources: [{ workshop_id: 20, active: true, daily_hours: 9 }],
   appointments: [],
 };
 
@@ -81,11 +103,17 @@ type HarnessOptions = {
     accessToken: string,
     vehicleId: unknown,
   ) => Promise<DirectusVehicleContext>;
+  getAvailableService?: (
+    accessToken: string,
+    serviceId: unknown,
+  ) => Promise<AvailableService>;
+  resolveWorkshops?: () => Promise<ResolvedBookingWorkshop[]>;
 };
 
 const createHarness = (options: HarnessOptions = {}) => {
   const vehicleCalls: Array<{ accessToken: string; vehicleId: unknown }> = [];
-  const catalogTokens: string[] = [];
+  const serviceCalls: Array<{ accessToken: string; serviceId: unknown }> = [];
+  const resolverQueries: unknown[] = [];
   const snapshotQueries: unknown[] = [];
   const useCase = createSearchAppointmentAvailabilityUseCase({
     async getVehicleContext(accessToken, vehicleId) {
@@ -95,9 +123,22 @@ const createHarness = (options: HarnessOptions = {}) => {
       }
       return vehicleContext;
     },
-    async getAiCatalogs(accessToken) {
-      catalogTokens.push(accessToken);
-      return catalogs;
+    async getAvailableService(accessToken, serviceId) {
+      serviceCalls.push({ accessToken, serviceId });
+      if (options.getAvailableService !== undefined) {
+        return options.getAvailableService(accessToken, serviceId);
+      }
+      const service = catalogs.available_services.find(
+        (candidate) => candidate.id === serviceId,
+      );
+      if (service === undefined) {
+        throw new DirectusError("DIRECTUS_NOT_FOUND");
+      }
+      return service;
+    },
+    async resolveBookingWorkshops(query) {
+      resolverQueries.push(query);
+      return options.resolveWorkshops?.() ?? [resolvedWorkshop];
     },
     async getBookingSnapshot(query) {
       snapshotQueries.push(query);
@@ -109,13 +150,20 @@ const createHarness = (options: HarnessOptions = {}) => {
     }),
     now: () => TODAY,
   });
-  return { catalogTokens, snapshotQueries, useCase, vehicleCalls };
+  return {
+    resolverQueries,
+    serviceCalls,
+    snapshotQueries,
+    useCase,
+    vehicleCalls,
+  };
 };
 
 const validRequest = {
   vehicle_id: 14,
   service_type_id: 2,
-  workshop_ids: [1],
+  showroom_id: 8,
+  workshop_types: ["mecanique"],
   preferred_date: "2026-08-12",
   preferred_period: "morning",
 } as const;
@@ -127,14 +175,73 @@ test("uses the client token and stops the search at the global window end", asyn
   assert.deepEqual(harness.vehicleCalls, [
     { accessToken: CLIENT_TOKEN, vehicleId: 14 },
   ]);
-  assert.deepEqual(harness.catalogTokens, [CLIENT_TOKEN]);
+  assert.deepEqual(harness.serviceCalls, [
+    { accessToken: CLIENT_TOKEN, serviceId: 2 },
+  ]);
+  assert.deepEqual(harness.resolverQueries, [
+    { showroomId: 8, workshopTypes: ["mecanique"] },
+  ]);
   assert.deepEqual(harness.snapshotQueries, [
     {
-      workshopIds: [1],
+      workshopIds: [20],
+      showroomId: 8,
       startDate: "2026-08-12",
       endDate: "2026-09-08",
     },
   ]);
+});
+
+test("resolves Tanger carrosserie to physical workshop 24", async () => {
+  const tangerWorkshop: ResolvedBookingWorkshop = {
+    ...resolvedWorkshop,
+    id: 24,
+    name: "Atelier Tanger",
+    workshop_type: "carrosserie",
+    showroom: {
+      ...resolvedWorkshop.showroom,
+      id: 5,
+      name: "Tanger",
+      city: "Tanger",
+    },
+  };
+  const tangerSnapshot: DirectusBookingAvailabilitySnapshot = {
+    workshops: [tangerWorkshop],
+    schedules: [{ ...snapshot.schedules[0]!, workshop_id: 24 }],
+    resources: [{ workshop_id: 24, active: true, daily_hours: 9 }],
+    appointments: [],
+  };
+  const harness = createHarness({
+    bookingSnapshot: tangerSnapshot,
+    resolveWorkshops: async () => [tangerWorkshop],
+  });
+
+  const result = await harness.useCase(CLIENT_TOKEN, {
+    ...validRequest,
+    service_type_id: 4,
+    showroom_id: 5,
+    workshop_types: ["carrosserie"],
+  });
+
+  assert.equal(result.options[0]?.workshop_id, 24);
+  assert.equal(result.options[0]?.showroom.id, 5);
+  assert.deepEqual(harness.snapshotQueries[0], {
+    workshopIds: [24],
+    showroomId: 5,
+    startDate: "2026-08-12",
+    endDate: "2026-09-08",
+  });
+});
+
+test("rejects the old workshop_ids contract before every dependency", async () => {
+  const harness = createHarness();
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, { ...validRequest, workshop_ids: [20] }),
+  );
+  assert.equal(harness.vehicleCalls.length, 0);
+  assert.equal(harness.serviceCalls.length, 0);
+  assert.equal(harness.resolverQueries.length, 0);
+  assert.equal(harness.snapshotQueries.length, 0);
 });
 
 test("returns the service name and one signed token for each of at most three options", async () => {
@@ -159,11 +266,12 @@ test("returns the service name and one signed token for each of at most three op
   assert.deepEqual(
     verifier.verify(result.options[0]?.slot_token ?? ""),
     {
-      version: 1,
+      version: 2,
       expiration: 1_786_363_800,
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_id: 1,
+      workshop_id: 20,
+      showroom_id: 8,
       requested_date: "2026-08-12",
       requested_time: "08:00:00",
       slot_interval_minutes: 30,
@@ -185,7 +293,8 @@ test("day-slots reads one date and signs every returned option", async () => {
 
   assert.deepEqual(harness.snapshotQueries, [
     {
-      workshopIds: [1],
+      workshopIds: [20],
+      showroomId: 8,
       startDate: "2026-08-12",
       endDate: "2026-08-12",
     },
@@ -218,17 +327,18 @@ test("rejects an inaccessible vehicle before catalog or occupancy reads", async 
       return true;
     },
   );
-  assert.equal(harness.catalogTokens.length, 0);
+  assert.equal(harness.serviceCalls.length, 0);
+  assert.equal(harness.resolverQueries.length, 0);
   assert.equal(harness.snapshotQueries.length, 0);
 });
 
-test("rejects workshop/service incompatibility before reading occupancy", async () => {
+test("rejects PEINT with mecanique before resolving workshops or reading occupancy", async () => {
   const harness = createHarness();
 
   await assert.rejects(
     harness.useCase(CLIENT_TOKEN, {
       ...validRequest,
-      service_type_id: 4,
+      service_type_id: 5,
     }),
     (error: unknown) => {
       assert.ok(error instanceof BookingAvailabilityError);
@@ -236,6 +346,7 @@ test("rejects workshop/service incompatibility before reading occupancy", async 
       return true;
     },
   );
+  assert.equal(harness.resolverQueries.length, 0);
   assert.equal(harness.snapshotQueries.length, 0);
 });
 
@@ -261,6 +372,22 @@ test("returns a controlled not-found error when no day slot exists", async () =>
       return true;
     },
   );
+});
+
+test("maps a showroom without a matching workshop to controlled no availability", async () => {
+  const harness = createHarness({
+    resolveWorkshops: async () => {
+      throw new DirectusError("DIRECTUS_NOT_FOUND");
+    },
+  });
+
+  await assert.rejects(
+    harness.useCase(CLIENT_TOKEN, validRequest),
+    (error: unknown) =>
+      error instanceof BookingAvailabilityError &&
+      error.code === "BOOKING_AVAILABILITY_NOT_FOUND",
+  );
+  assert.equal(harness.snapshotQueries.length, 0);
 });
 
 test("returns a controlled not-found error when the requested period has no slot", async () => {
@@ -301,6 +428,7 @@ test("returns a controlled configuration error before any Directus read", async 
     },
   );
   assert.equal(harness.vehicleCalls.length, 0);
-  assert.equal(harness.catalogTokens.length, 0);
+  assert.equal(harness.serviceCalls.length, 0);
+  assert.equal(harness.resolverQueries.length, 0);
   assert.equal(harness.snapshotQueries.length, 0);
 });

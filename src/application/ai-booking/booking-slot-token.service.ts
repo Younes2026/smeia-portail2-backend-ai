@@ -3,17 +3,16 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 import {
+  BookingPhysicalWorkshopIdSchema,
+  BookingShowroomIdSchema,
   BookingVehicleIdSchema,
   IsoDateSchema,
   IsoTimeSchema,
 } from "../../domain/ai-booking/index.js";
-import {
-  ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
-} from "../../domain/ai-diagnostic/index.js";
+import { ALLOWED_SERVICE_TYPE_IDS } from "../../domain/ai-diagnostic/index.js";
 import { BookingAvailabilityError } from "./booking-errors.js";
 
-export const BOOKING_SLOT_TOKEN_VERSION = 1 as const;
+export const BOOKING_SLOT_TOKEN_VERSION = 2 as const;
 export const BOOKING_SLOT_TOKEN_TTL_SECONDS = 10 * 60;
 
 const base64UrlSegmentPattern = /^[A-Za-z0-9_-]+$/;
@@ -22,7 +21,8 @@ export const BookingSlotTokenClaimsSchema = z
   .object({
     vehicle_id: BookingVehicleIdSchema,
     service_type_id: z.literal(ALLOWED_SERVICE_TYPE_IDS),
-    workshop_id: z.literal(ALLOWED_WORKSHOP_IDS),
+    workshop_id: BookingPhysicalWorkshopIdSchema,
+    showroom_id: BookingShowroomIdSchema,
     requested_date: IsoDateSchema,
     requested_time: IsoTimeSchema,
     slot_interval_minutes: z.number().int().positive().max(24 * 60),

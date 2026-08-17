@@ -52,6 +52,11 @@ const configuredBookingAvailabilityService =
 export const getDirectusAiCatalogs = (accessToken: string) =>
   configuredCatalogService.getAiCatalogs(accessToken);
 
+export const getDirectusAvailableService = (
+  accessToken: string,
+  serviceId: unknown,
+) => configuredCatalogService.getAvailableService(accessToken, serviceId);
+
 export const getDirectusVehicleContext = (
   accessToken: string,
   vehicleId: unknown,

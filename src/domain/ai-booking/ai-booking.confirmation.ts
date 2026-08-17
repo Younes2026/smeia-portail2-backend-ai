@@ -10,7 +10,8 @@ import type {
 type BookingWeekday = (typeof BOOKING_WEEKDAYS)[number];
 
 export type BookingSlotSelection = {
-  workshop_id: 1 | 2 | 3 | 4;
+  workshop_id: number;
+  showroom_id: number;
   requested_date: string;
   requested_time: string;
   slot_interval_minutes: number;
@@ -56,6 +57,7 @@ export const checkBookingSlotAvailability = (
   );
   if (
     workshop === undefined ||
+    workshop.showroom.id !== selection.showroom_id ||
     !workshop.active ||
     !workshop.client_bookable ||
     workshop.slot_interval_minutes !== selection.slot_interval_minutes

@@ -99,6 +99,55 @@ const expectInvalidCatalog = async (promise: Promise<unknown>) => {
   });
 };
 
+test("loads only the requested booking service without the workshop catalog", async () => {
+  const harness = createCatalogHarness({
+    servicesPayload: {
+      data: [
+        { id: 5, name: "Service cinq", qualification_code: "PEINT" },
+      ],
+    },
+  });
+
+  const result = await harness.service.getAvailableService(
+    FAKE_ACCESS_TOKEN,
+    5,
+  );
+
+  assert.deepEqual(result, { id: 5, name: "Service cinq", code: "PEINT" });
+  assert.equal(harness.calls.length, 1);
+  const call = harness.calls[0];
+  assert.ok(call);
+  assert.equal(call.url.pathname, "/api/items/service_types");
+  assert.equal(
+    call.url.searchParams.get("fields"),
+    "id,name,qualification_code",
+  );
+  assert.equal(call.url.searchParams.get("filter[id][_eq]"), "5");
+  assert.equal(call.url.searchParams.get("limit"), "2");
+  assert.equal(call.init?.method, "GET");
+});
+
+test("rejects an absent or incoherent requested booking service", async () => {
+  const absent = createCatalogHarness({ servicesPayload: { data: [] } });
+  await assert.rejects(
+    absent.service.getAvailableService(FAKE_ACCESS_TOKEN, 5),
+    (error: unknown) =>
+      error instanceof DirectusError && error.code === "DIRECTUS_NOT_FOUND",
+  );
+
+  const duplicate = createCatalogHarness({
+    servicesPayload: {
+      data: [
+        { id: 5, name: "Service cinq", qualification_code: "PEINT" },
+        { id: 5, name: "Doublon", qualification_code: "PEINT" },
+      ],
+    },
+  });
+  await expectInvalidCatalog(
+    duplicate.service.getAvailableService(FAKE_ACCESS_TOKEN, 5),
+  );
+});
+
 test("requests the service_types endpoint with limited fields and filters", async () => {
   const harness = createCatalogHarness();
 

@@ -57,6 +57,10 @@ export type DirectusAiCatalogs = {
 };
 
 export interface DirectusCatalogService {
+  getAvailableService(
+    accessToken: string,
+    serviceId: unknown,
+  ): Promise<AvailableService>;
   getAvailableServices(
     accessToken: string,
   ): Promise<{ available_services: AvailableService[] }>;
@@ -135,6 +139,48 @@ const parseWorkshops = (payload: unknown): AvailableWorkshop[] => {
 export const createDirectusCatalogService = (
   client: DirectusReadClient,
 ): DirectusCatalogService => {
+  const getAvailableService = async (
+    accessToken: string,
+    serviceId: unknown,
+  ) => {
+    const parsedServiceId = z.literal(ALLOWED_SERVICE_TYPE_IDS).safeParse(
+      serviceId,
+    );
+    if (!parsedServiceId.success) {
+      throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    }
+
+    const payload = await client.getJson(
+      "/items/service_types",
+      new URLSearchParams([
+        ["fields", "id,name,qualification_code"],
+        ["filter[id][_eq]", String(parsedServiceId.data)],
+        ["limit", "2"],
+      ]),
+      accessToken,
+    );
+    const parsed = directusServicesResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    }
+    if (parsed.data.data.length === 0) {
+      throw new DirectusError("DIRECTUS_NOT_FOUND");
+    }
+    if (
+      parsed.data.data.length !== 1 ||
+      parsed.data.data[0]?.id !== parsedServiceId.data
+    ) {
+      throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    }
+
+    const service = parsed.data.data[0];
+    return availableServiceSchema.parse({
+      id: service.id,
+      name: service.name,
+      code: service.qualification_code,
+    });
+  };
+
   const getAvailableServices = async (accessToken: string) => {
     const payload = await client.getJson(
       "/items/service_types",
@@ -154,6 +200,7 @@ export const createDirectusCatalogService = (
   };
 
   return {
+    getAvailableService,
     getAvailableServices,
     getAvailableWorkshops,
     async getAiCatalogs(accessToken) {

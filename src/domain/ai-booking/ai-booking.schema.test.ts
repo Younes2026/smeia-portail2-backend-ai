@@ -14,11 +14,17 @@ const schema = createAppointmentAvailabilityRequestSchema(
 
 test("accepts the strict availability request and applies defaults", () => {
   assert.deepEqual(
-    schema.parse({ vehicle_id: 14, service_type_id: 2, workshop_ids: [1, 2] }),
+    schema.parse({
+      vehicle_id: 14,
+      service_type_id: 2,
+      showroom_id: 8,
+      workshop_types: ["diagnostic", "mecanique"],
+    }),
     {
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_ids: [1, 2],
+      showroom_id: 8,
+      workshop_types: ["diagnostic", "mecanique"],
       preferred_date: null,
       preferred_period: "any",
       result_mode: "suggestions",
@@ -35,7 +41,8 @@ test("rejects an unsupported result mode and a client-supplied limit", () => {
       schema.safeParse({
         vehicle_id: 14,
         service_type_id: 2,
-        workshop_ids: [1],
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
         ...extra,
       }).success,
       false,
@@ -49,7 +56,8 @@ test("requires a non-null preferred date in day-slots mode", () => {
       schema.safeParse({
         vehicle_id: 14,
         service_type_id: 2,
-        workshop_ids: [1],
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
         preferred_date,
         result_mode: "day_slots",
       }).success,
@@ -64,7 +72,8 @@ test("rejects a day-slots date outside the global booking window", () => {
       schema.safeParse({
         vehicle_id: 14,
         service_type_id: 2,
-        workshop_ids: [1],
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
         preferred_date,
         result_mode: "day_slots",
       }).success,
@@ -73,12 +82,13 @@ test("rejects a day-slots date outside the global booking window", () => {
   }
 });
 
-test("rejects additional properties, unsupported IDs and duplicate workshops", () => {
+test("rejects old physical IDs, unsupported values and duplicate workshop types", () => {
   assert.equal(
     schema.safeParse({
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_ids: [1],
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
       customer_id: 99,
     }).success,
     false,
@@ -87,7 +97,8 @@ test("rejects additional properties, unsupported IDs and duplicate workshops", (
     schema.safeParse({
       vehicle_id: 14,
       service_type_id: 9,
-      workshop_ids: [1],
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
     }).success,
     false,
   );
@@ -95,10 +106,32 @@ test("rejects additional properties, unsupported IDs and duplicate workshops", (
     schema.safeParse({
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_ids: [1, 1],
+      showroom_id: 8,
+      workshop_types: ["mecanique", "mecanique"],
     }).success,
     false,
   );
+  assert.equal(
+    schema.safeParse({
+      vehicle_id: 14,
+      service_type_id: 2,
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
+      workshop_ids: [20],
+    }).success,
+    false,
+  );
+  for (const workshop_types of [[], ["electricite"], ["diagnostic", "mecanique", "peinture"]]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        showroom_id: 8,
+        workshop_types,
+      }).success,
+      false,
+    );
+  }
 });
 
 test("requires a positive safe integer vehicle ID", () => {
@@ -114,7 +147,29 @@ test("requires a positive safe integer vehicle ID", () => {
       schema.safeParse({
         vehicle_id,
         service_type_id: 2,
-        workshop_ids: [1],
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
+      }).success,
+      false,
+    );
+  }
+});
+
+test("requires a positive safe integer showroom ID", () => {
+  for (const showroom_id of [
+    undefined,
+    "8",
+    0,
+    -1,
+    8.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        showroom_id,
+        workshop_types: ["mecanique"],
       }).success,
       false,
     );
@@ -127,7 +182,8 @@ test("rejects malformed, impossible and past preferred dates", () => {
       schema.safeParse({
         vehicle_id: 14,
         service_type_id: 2,
-        workshop_ids: [1],
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
         preferred_date,
       }).success,
       false,
@@ -140,7 +196,8 @@ test("accepts the last booking-window date and rejects later dates", () => {
     schema.safeParse({
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_ids: [1],
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
       preferred_date: "2026-09-08",
     }).success,
     true,
@@ -149,7 +206,8 @@ test("accepts the last booking-window date and rejects later dates", () => {
     schema.safeParse({
       vehicle_id: 14,
       service_type_id: 2,
-      workshop_ids: [1],
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
       preferred_date: "2026-09-09",
     }).success,
     false,

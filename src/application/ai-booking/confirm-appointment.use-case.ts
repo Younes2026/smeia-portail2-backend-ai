@@ -9,14 +9,14 @@ import {
   type AppointmentConfirmationResult,
   type DirectusBookingAvailabilitySnapshot,
 } from "../../domain/ai-booking/index.js";
-import { getCompatibleWorkshopIdsForServiceCode } from "../../domain/ai-diagnostic/index.js";
+import { getCompatibleWorkshopTypesForServiceCode } from "../../domain/ai-diagnostic/index.js";
 import {
   DirectusError,
   createDirectusAppointment,
-  getDirectusAiCatalogs,
+  getDirectusAvailableService,
   getDirectusBookingAvailabilitySnapshot,
   getDirectusBookingVehicleIdentity,
-  type DirectusAiCatalogs,
+  type AvailableService,
   type DirectusAppointmentCreateInput,
   type DirectusBookingAvailabilityQuery,
   type DirectusBookingVehicleIdentity,
@@ -52,7 +52,10 @@ export type ConfirmAppointmentUseCaseDependencies = {
     accessToken: string,
     vehicleId: unknown,
   ): Promise<DirectusBookingVehicleIdentity>;
-  getAiCatalogs(accessToken: string): Promise<DirectusAiCatalogs>;
+  getAvailableService(
+    accessToken: string,
+    serviceId: unknown,
+  ): Promise<AvailableService>;
   getBookingSnapshot(
     query: DirectusBookingAvailabilityQuery,
   ): Promise<DirectusBookingAvailabilitySnapshot>;
@@ -93,25 +96,23 @@ const verifySlotToken = (
   }
 };
 
-const validateCatalogContext = (
+const validateBookingContext = (
   token: BookingSlotTokenPayload,
-  catalogs: DirectusAiCatalogs,
+  service: AvailableService,
+  snapshot: DirectusBookingAvailabilitySnapshot,
 ) => {
-  const service = catalogs.available_services.find(
-    (candidate) => candidate.id === token.service_type_id,
-  );
-  const catalogWorkshop = catalogs.available_workshops.find(
+  const workshop = snapshot.workshops.find(
     (candidate) => candidate.id === token.workshop_id,
   );
-  const compatibleWorkshopIds =
-    service === undefined
-      ? null
-      : getCompatibleWorkshopIdsForServiceCode(service.code);
+  const compatibleWorkshopTypes = getCompatibleWorkshopTypesForServiceCode(
+    service.code,
+  );
   if (
-    service === undefined ||
-    catalogWorkshop === undefined ||
-    compatibleWorkshopIds === null ||
-    !compatibleWorkshopIds.has(token.workshop_id)
+    service.id !== token.service_type_id ||
+    workshop === undefined ||
+    workshop.showroom.id !== token.showroom_id ||
+    compatibleWorkshopTypes === null ||
+    !compatibleWorkshopTypes.has(workshop.workshop_type)
   ) {
     throw new BookingConfirmationError("BOOKING_CONTEXT_INVALID");
   }
@@ -168,13 +169,40 @@ export const createConfirmAppointmentUseCase = (
 
         const lockKey = createBookingSlotLockKey(token);
         return dependencies.slotLock.withLock(lockKey, async () => {
-          const catalogs = await dependencies.getAiCatalogs(accessToken);
-          const service = validateCatalogContext(token, catalogs);
-          const snapshot = await dependencies.getBookingSnapshot({
-            workshopIds: [token.workshop_id],
-            startDate: token.requested_date,
-            endDate: token.requested_date,
-          });
+          let service: AvailableService;
+          try {
+            service = await dependencies.getAvailableService(
+              accessToken,
+              token.service_type_id,
+            );
+          } catch (error: unknown) {
+            if (
+              error instanceof DirectusError &&
+              error.code === "DIRECTUS_NOT_FOUND"
+            ) {
+              throw new BookingConfirmationError("BOOKING_CONTEXT_INVALID");
+            }
+            throw error;
+          }
+          let snapshot: DirectusBookingAvailabilitySnapshot;
+          try {
+            snapshot = await dependencies.getBookingSnapshot({
+              workshopIds: [token.workshop_id],
+              showroomId: token.showroom_id,
+              startDate: token.requested_date,
+              endDate: token.requested_date,
+            });
+          } catch (error: unknown) {
+            if (
+              error instanceof DirectusError &&
+              (error.code === "DIRECTUS_NOT_FOUND" ||
+                error.code === "DIRECTUS_INVALID_RESPONSE")
+            ) {
+              throw new BookingConfirmationError("BOOKING_CONTEXT_INVALID");
+            }
+            throw error;
+          }
+          validateBookingContext(token, service, snapshot);
           const now = dependencies.now();
           const slotCheck = checkBookingSlotAvailability(token, snapshot, {
             date: getCasablancaIsoDate(now),
@@ -195,6 +223,7 @@ export const createConfirmAppointmentUseCase = (
               vehicle_id: token.vehicle_id,
               service_type_id: token.service_type_id,
               workshop_id: token.workshop_id,
+              showroom_id: token.showroom_id,
               requested_date: token.requested_date,
               requested_time: token.requested_time,
               comment: request.problem_summary,
@@ -243,7 +272,7 @@ export const confirmAppointmentUseCase = createConfirmAppointmentUseCase({
     maxKeys: BOOKING_SLOT_LOCK_MAX_KEYS,
   }),
   getBookingVehicleIdentity: getDirectusBookingVehicleIdentity,
-  getAiCatalogs: getDirectusAiCatalogs,
+  getAvailableService: getDirectusAvailableService,
   getBookingSnapshot: getDirectusBookingAvailabilitySnapshot,
   createAppointment: createDirectusAppointment,
   now: systemClock,

@@ -48,7 +48,8 @@ const availability = {
 const validBody = {
   vehicle_id: 14,
   service_type_id: 2,
-  workshop_ids: [1],
+  showroom_id: 8,
+  workshop_types: ["mecanique"],
   preferred_date: "2026-08-12",
   preferred_period: "morning",
 };
