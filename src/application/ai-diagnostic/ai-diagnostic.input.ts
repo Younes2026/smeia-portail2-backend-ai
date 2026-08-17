@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import {
   ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
 } from "../../domain/ai-diagnostic/index.js";
 
 export const MAX_AI_DIAGNOSTIC_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -96,15 +96,15 @@ export const AiDiagnosticInputSchema = z
         })
         .strict(),
     ),
-    available_workshops: z.array(
-      z
-        .object({
-          id: z.literal(ALLOWED_WORKSHOP_IDS),
-          name: z.string().trim().min(1),
-          workshop_type: z.string().trim().min(1),
-        })
-        .strict(),
-    ),
+    available_workshop_types: z
+      .array(z.enum(ALLOWED_WORKSHOP_TYPES))
+      .min(1)
+      .max(ALLOWED_WORKSHOP_TYPES.length)
+      .refine(
+        (workshopTypes) =>
+          new Set(workshopTypes).size === workshopTypes.length,
+        "Available workshop types must be unique.",
+      ),
     image: AiDiagnosticImageSchema.nullable(),
   })
   .strict();

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
 } from "./ai-diagnostic.constants.js";
 
 export const AiDiagnosticQuestionSchema = z
@@ -36,7 +36,7 @@ export const AiDiagnosticModelOutputSchema = z
     ]),
     safety_message: z.string().nullable(),
     suggested_service_type_id: z.literal(ALLOWED_SERVICE_TYPE_IDS).nullable(),
-    suggested_workshop_ids: z.array(z.literal(ALLOWED_WORKSHOP_IDS)),
+    suggested_workshop_types: z.array(z.enum(ALLOWED_WORKSHOP_TYPES)),
     questions: z.array(AiDiagnosticQuestionSchema).max(3),
     client_message: z.string(),
     sav_notes: z.string(),

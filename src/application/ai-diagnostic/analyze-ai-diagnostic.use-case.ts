@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import type { AiDiagnosticModelOutput } from "../../domain/ai-diagnostic/index.js";
+import {
+  ALLOWED_WORKSHOP_TYPES,
+  type AiDiagnosticModelOutput,
+} from "../../domain/ai-diagnostic/index.js";
 import {
   DirectusError,
   getDirectusAiCatalogs,
@@ -66,7 +69,7 @@ const buildInternalInput = (
     answer: answer.answer,
   })),
   available_services: catalogs.available_services,
-  available_workshops: catalogs.available_workshops,
+  available_workshop_types: [...ALLOWED_WORKSHOP_TYPES],
   image: request.photo,
 });
 

@@ -29,7 +29,7 @@ const createReadyOutput = (): AiDiagnosticModelOutput => ({
   driving_advice: "caution",
   safety_message: "Évitez les longs trajets avant le contrôle.",
   suggested_service_type_id: 2,
-  suggested_workshop_ids: [1],
+  suggested_workshop_types: ["diagnostic"],
   questions: [],
   client_message: "Un contrôle du système de freinage est conseillé.",
   sav_notes: "Contrôler les éléments de freinage.",
@@ -73,7 +73,7 @@ test("accepts a valid needs_questions response", () => {
     ...createReadyOutput(),
     diagnosis_status: "needs_questions",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     questions: [createQuestion()],
   });
 });
@@ -87,7 +87,7 @@ test("accepts a valid out_of_scope response", () => {
     ...createReadyOutput(),
     diagnosis_status: "out_of_scope",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     client_message:
       "Cet assistant traite uniquement les demandes SAV automobile.",
   });
@@ -116,10 +116,10 @@ test("rejects an unauthorized service type", () => {
   assert.equal(result.success, false);
 });
 
-test("rejects an unauthorized workshop", () => {
+test("rejects an unauthorized workshop type", () => {
   const result = AiDiagnosticModelOutputSchema.safeParse({
     ...createReadyOutput(),
-    suggested_workshop_ids: [5],
+    suggested_workshop_types: ["electricite"],
   });
 
   assert.equal(result.success, false);
@@ -130,7 +130,7 @@ test("rejects more than three questions", () => {
     ...createReadyOutput(),
     diagnosis_status: "needs_questions",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     questions: [
       createQuestion(),
       { ...createQuestion(), id: "question_2" },
@@ -149,10 +149,10 @@ test("rejects ready without a service", () => {
   );
 });
 
-test("rejects ready without a workshop", () => {
+test("rejects ready without a workshop type", () => {
   expectBusinessInvalid(
-    { ...createReadyOutput(), suggested_workshop_ids: [] },
-    "suggested_workshop_ids",
+    { ...createReadyOutput(), suggested_workshop_types: [] },
+    "suggested_workshop_types",
   );
 });
 
@@ -167,16 +167,16 @@ test("rejects needs_questions with a recommendation", () => {
   );
 });
 
-test("rejects needs_questions with a workshop recommendation", () => {
+test("rejects needs_questions with a workshop type recommendation", () => {
   expectBusinessInvalid(
     {
       ...createReadyOutput(),
       diagnosis_status: "needs_questions",
       suggested_service_type_id: null,
-      suggested_workshop_ids: [1],
+      suggested_workshop_types: ["diagnostic"],
       questions: [createQuestion()],
     },
-    "suggested_workshop_ids",
+    "suggested_workshop_types",
   );
 });
 
@@ -186,7 +186,7 @@ test("rejects needs_questions without a question", () => {
       ...createReadyOutput(),
       diagnosis_status: "needs_questions",
       suggested_service_type_id: null,
-      suggested_workshop_ids: [],
+      suggested_workshop_types: [],
       questions: [],
     },
     "questions",
@@ -200,10 +200,17 @@ test("rejects ready with questions", () => {
   );
 });
 
-test("rejects ready with more than two workshops", () => {
+test("rejects ready with more than two workshop types", () => {
   expectBusinessInvalid(
-    { ...createReadyOutput(), suggested_workshop_ids: [1, 2, 3] },
-    "suggested_workshop_ids",
+    {
+      ...createReadyOutput(),
+      suggested_workshop_types: [
+        "diagnostic",
+        "mecanique",
+        "carrosserie",
+      ],
+    },
+    "suggested_workshop_types",
   );
 });
 
@@ -320,10 +327,13 @@ test("rejects critical urgency with safe_to_drive", () => {
   assert.equal(result.success, false);
 });
 
-test("rejects duplicate workshop IDs", () => {
+test("rejects duplicate workshop types", () => {
   expectBusinessInvalid(
-    { ...createReadyOutput(), suggested_workshop_ids: [1, 1] },
-    "suggested_workshop_ids",
+    {
+      ...createReadyOutput(),
+      suggested_workshop_types: ["diagnostic", "diagnostic"],
+    },
+    "suggested_workshop_types",
   );
 });
 
@@ -341,7 +351,7 @@ test("rejects more than four options for a question", () => {
     ...createReadyOutput(),
     diagnosis_status: "needs_questions",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     questions: [
       {
         ...createQuestion(),
@@ -360,7 +370,7 @@ test("rejects an out-of-scope response without a scope explanation", () => {
       ...createReadyOutput(),
       diagnosis_status: "out_of_scope",
       suggested_service_type_id: null,
-      suggested_workshop_ids: [],
+      suggested_workshop_types: [],
       client_message: "Je ne peux pas traiter cette demande.",
     },
     "client_message",
@@ -373,7 +383,7 @@ test("rejects out_of_scope with questions", () => {
       ...createReadyOutput(),
       diagnosis_status: "out_of_scope",
       suggested_service_type_id: null,
-      suggested_workshop_ids: [],
+      suggested_workshop_types: [],
       questions: [createQuestion()],
       client_message:
         "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
@@ -388,7 +398,7 @@ test("rejects out_of_scope with a service", () => {
       ...createReadyOutput(),
       diagnosis_status: "out_of_scope",
       suggested_service_type_id: 2,
-      suggested_workshop_ids: [],
+      suggested_workshop_types: [],
       client_message:
         "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
     },
@@ -396,16 +406,16 @@ test("rejects out_of_scope with a service", () => {
   );
 });
 
-test("rejects out_of_scope with a workshop", () => {
+test("rejects out_of_scope with a workshop type", () => {
   expectBusinessInvalid(
     {
       ...createReadyOutput(),
       diagnosis_status: "out_of_scope",
       suggested_service_type_id: null,
-      suggested_workshop_ids: [1],
+      suggested_workshop_types: ["diagnostic"],
       client_message:
         "Le service SAV automobile traite uniquement les demandes liées aux véhicules.",
     },
-    "suggested_workshop_ids",
+    "suggested_workshop_types",
   );
 });

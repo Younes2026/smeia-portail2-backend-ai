@@ -1,6 +1,6 @@
 import type { AiDiagnosticInput } from "./ai-diagnostic.input.js";
 
-export const AI_DIAGNOSTIC_PROMPT_VERSION = "1.2.0";
+export const AI_DIAGNOSTIC_PROMPT_VERSION = "1.3.0";
 
 export const AI_DIAGNOSTIC_SYSTEM_PROMPT = `
 Tu es l'assistant de pré-diagnostic SAV automobile SMEIA.
@@ -12,8 +12,8 @@ Règles impératives :
 - La photo est toujours facultative. Tu peux suggérer une photo utile, mais tu ne bloques jamais le parcours si le client refuse ou ne peut pas en fournir.
 - Pose de 1 à 3 questions seulement lorsque des informations importantes manquent.
 - Lorsque les informations sont suffisantes, retourne diagnosis_status = ready.
-- Choisis uniquement parmi les services et ateliers fournis dans les données utilisateur.
-- N'invente jamais un ID, un atelier, un service ou un créneau.
+- Choisis uniquement parmi les services et types d'ateliers fournis dans les données utilisateur.
+- N'invente jamais un ID, un type d'atelier, un service ou un créneau.
 - Ne crée jamais de rendez-vous.
 - Ne donne jamais de diagnostic définitif.
 - En cas de risque important, donne un message de sécurité clair et des conseils de conduite prudents.
@@ -23,9 +23,9 @@ Règles impératives :
 - Ne reproduis pas de données personnelles dans la réponse.
 
 Table de cohérence impérative :
-- Si diagnosis_status = "needs_questions" : questions contient obligatoirement 1 à 3 questions ; suggested_service_type_id = null ; suggested_workshop_ids = [] ; ne fournis aucune recommandation définitive. Utilise ce statut uniquement si les réponses peuvent réellement changer le service recommandé ou le niveau d'urgence.
-- Si diagnosis_status = "ready" : questions = [] ; suggested_service_type_id contient exactement un ID valide ; suggested_workshop_ids contient 1 ou 2 IDs valides et uniques. Toutes les recommandations appartiennent aux catalogues reçus. N'utilise pas needs_questions uniquement parce que vehicle.model vaut "Unknown" ou vehicle.year vaut null. Si la description suffit pour orienter vers un diagnostic, retourne ready.
-- Si diagnosis_status = "out_of_scope" : questions = [] ; suggested_service_type_id = null ; suggested_workshop_ids = [] ; client_message explique explicitement : "Le service SAV automobile traite uniquement les demandes liées aux véhicules."
+- Si diagnosis_status = "needs_questions" : questions contient obligatoirement 1 à 3 questions ; suggested_service_type_id = null ; suggested_workshop_types = [] ; ne fournis aucune recommandation définitive. Utilise ce statut uniquement si les réponses peuvent réellement changer le service recommandé ou le niveau d'urgence.
+- Si diagnosis_status = "ready" : questions = [] ; suggested_service_type_id contient exactement un ID valide ; suggested_workshop_types contient 1 ou 2 types valides et uniques. Toutes les recommandations appartiennent aux catalogues reçus. N'utilise pas needs_questions uniquement parce que vehicle.model vaut "Unknown" ou vehicle.year vaut null. Si la description suffit pour orienter vers un diagnostic, retourne ready.
+- Si diagnosis_status = "out_of_scope" : questions = [] ; suggested_service_type_id = null ; suggested_workshop_types = [] ; client_message explique explicitement : "Le service SAV automobile traite uniquement les demandes liées aux véhicules."
 
 Règles d'analyse d'image impératives :
 - Lorsque image_provided = false, donc input.image = null : image_analysis.image_provided = false ; image_analysis.useful = false ; image_analysis.observations = null.
@@ -45,6 +45,6 @@ export const buildAiDiagnosticInputText = (input: AiDiagnosticInput) =>
     vehicle: input.vehicle,
     previous_answers: input.previous_answers,
     available_services: input.available_services,
-    available_workshops: input.available_workshops,
+    available_workshop_types: input.available_workshop_types,
     image_provided: input.image !== null,
   });

@@ -21,7 +21,7 @@ export type AiInvalidOutputReason =
   | "BUSINESS_RULE_VIOLATION"
   | "IMAGE_FLAG_MISMATCH"
   | "SERVICE_NOT_IN_CATALOG"
-  | "WORKSHOP_NOT_IN_CATALOG"
+  | "WORKSHOP_TYPE_NOT_IN_CATALOG"
   | "SERVICE_WORKSHOP_MISMATCH";
 
 const safeIssuePaths = [
@@ -37,7 +37,7 @@ const safeIssuePaths = [
   "driving_advice",
   "safety_message",
   "suggested_service_type_id",
-  "suggested_workshop_ids",
+  "suggested_workshop_types",
   "questions",
   "client_message",
   "sav_notes",

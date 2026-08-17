@@ -38,19 +38,11 @@ const input = {
       code: "MEC-DIAG B",
     },
   ],
-  available_workshops: [
-    { id: 1, name: "Atelier Rapide", workshop_type: "diagnostic" },
-    {
-      id: 2,
-      name: "Atelier mécanique & Diag",
-      workshop_type: "mecanique",
-    },
-    {
-      id: 3,
-      name: "Atelier carrosserie",
-      workshop_type: "carrosserie",
-    },
-    { id: 4, name: "Atelier peinture", workshop_type: "peinture" },
+  available_workshop_types: [
+    "diagnostic",
+    "mecanique",
+    "carrosserie",
+    "peinture",
   ],
   image: null,
 } as const;

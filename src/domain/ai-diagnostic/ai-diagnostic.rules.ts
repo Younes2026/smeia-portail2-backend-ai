@@ -1,11 +1,11 @@
 import {
   ALLOWED_SERVICE_TYPE_IDS,
-  ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
 } from "./ai-diagnostic.constants.js";
 import type { AiDiagnosticModelOutput } from "./ai-diagnostic.schema.js";
 
 const allowedServiceTypeIds = new Set<number>(ALLOWED_SERVICE_TYPE_IDS);
-const allowedWorkshopIds = new Set<number>(ALLOWED_WORKSHOP_IDS);
+const allowedWorkshopTypes = new Set<string>(ALLOWED_WORKSHOP_TYPES);
 
 export type AiDiagnosticBusinessRuleIssue = {
   path: string;
@@ -53,23 +53,23 @@ export const validateAiDiagnosticBusinessRules = (
   }
 
   if (
-    output.suggested_workshop_ids.some(
-      (workshopId) => !allowedWorkshopIds.has(workshopId),
+    output.suggested_workshop_types.some(
+      (workshopType) => !allowedWorkshopTypes.has(workshopType),
     )
   ) {
     issues.push({
-      path: "suggested_workshop_ids",
-      message: "One or more suggested workshops are not allowed.",
+      path: "suggested_workshop_types",
+      message: "One or more suggested workshop types are not allowed.",
     });
   }
 
   if (
-    new Set(output.suggested_workshop_ids).size !==
-    output.suggested_workshop_ids.length
+    new Set(output.suggested_workshop_types).size !==
+    output.suggested_workshop_types.length
   ) {
     issues.push({
-      path: "suggested_workshop_ids",
-      message: "Suggested workshops must not contain duplicates.",
+      path: "suggested_workshop_types",
+      message: "Suggested workshop types must not contain duplicates.",
     });
   }
 
@@ -88,10 +88,11 @@ export const validateAiDiagnosticBusinessRules = (
       });
     }
 
-    if (output.suggested_workshop_ids.length > 0) {
+    if (output.suggested_workshop_types.length > 0) {
       issues.push({
-        path: "suggested_workshop_ids",
-        message: "Workshops cannot be suggested while answers are still needed.",
+        path: "suggested_workshop_types",
+        message:
+          "Workshop types cannot be suggested while answers are still needed.",
       });
     }
   }
@@ -112,12 +113,13 @@ export const validateAiDiagnosticBusinessRules = (
     }
 
     if (
-      output.suggested_workshop_ids.length < 1 ||
-      output.suggested_workshop_ids.length > 2
+      output.suggested_workshop_types.length < 1 ||
+      output.suggested_workshop_types.length > 2
     ) {
       issues.push({
-        path: "suggested_workshop_ids",
-        message: "A ready diagnostic must suggest 1 or 2 allowed workshops.",
+        path: "suggested_workshop_types",
+        message:
+          "A ready diagnostic must suggest 1 or 2 allowed workshop types.",
       });
     }
   }
@@ -137,10 +139,11 @@ export const validateAiDiagnosticBusinessRules = (
       });
     }
 
-    if (output.suggested_workshop_ids.length > 0) {
+    if (output.suggested_workshop_types.length > 0) {
       issues.push({
-        path: "suggested_workshop_ids",
-        message: "An out-of-scope response must not suggest workshops.",
+        path: "suggested_workshop_types",
+        message:
+          "An out-of-scope response must not suggest workshop types.",
       });
     }
 

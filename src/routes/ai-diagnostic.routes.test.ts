@@ -35,7 +35,7 @@ const readyDiagnostic: AiDiagnosticModelOutput = {
   driving_advice: "caution",
   safety_message: null,
   suggested_service_type_id: 2,
-  suggested_workshop_ids: [1],
+  suggested_workshop_types: ["diagnostic"],
   questions: [],
   client_message: "Un diagnostic est recommandé.",
   sav_notes: "Contrôler les codes défaut.",
@@ -422,6 +422,7 @@ test("does not expose the token, Directus context, or raw provider data", async 
       ACCESS_TOKEN,
       "available_services",
       "available_workshops",
+      "available_workshop_types",
       "vehicle_id",
       "output_parsed",
       "usage",
@@ -532,9 +533,9 @@ test("keeps AI_INVALID_OUTPUT diagnostics internal and out of logs", async () =>
         reason: "BUSINESS_RULE_VIOLATION",
         issue_paths: [
           "suggested_service_type_id",
-          "suggested_workshop_ids",
+          "suggested_workshop_types",
         ],
-        prompt_version: "1.2.0",
+        prompt_version: "1.3.0",
       });
     },
   });

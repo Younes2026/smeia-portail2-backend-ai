@@ -46,7 +46,7 @@ const readyDiagnostic: AiDiagnosticModelOutput = {
   driving_advice: "caution",
   safety_message: null,
   suggested_service_type_id: 2,
-  suggested_workshop_ids: [1],
+  suggested_workshop_types: ["diagnostic"],
   questions: [],
   client_message: "Un diagnostic est recommandé.",
   sav_notes: "Contrôler les codes défaut.",
@@ -57,7 +57,7 @@ const needsQuestionsDiagnostic: AiDiagnosticModelOutput = {
   ...readyDiagnostic,
   diagnosis_status: "needs_questions",
   suggested_service_type_id: null,
-  suggested_workshop_ids: [],
+  suggested_workshop_types: [],
   questions: [
     {
       id: "question-1",
@@ -226,14 +226,22 @@ test("builds the AI input from the trusted Directus vehicle", async () => {
   });
 });
 
-test("passes only the real Directus catalogs to the AI service", async () => {
+test("passes Directus services and only logical workshop types to the AI service", async () => {
   const harness = createHarness();
 
   await harness.useCase(ACCESS_TOKEN, validRequest);
 
   const input = harness.aiInputs[0] as AiDiagnosticInput;
   assert.deepEqual(input.available_services, catalogs.available_services);
-  assert.deepEqual(input.available_workshops, catalogs.available_workshops);
+  assert.deepEqual(input.available_workshop_types, [
+    "diagnostic",
+    "mecanique",
+    "carrosserie",
+    "peinture",
+  ]);
+  const serialized = JSON.stringify(input);
+  assert.equal(serialized.includes("Atelier Rapide"), false);
+  assert.equal(serialized.includes('"available_workshops"'), false);
 });
 
 test("does not send identifiers or sensitive vehicle data to OpenAI", async () => {
@@ -283,8 +291,9 @@ test("rejects every forbidden client-controlled property", async () => {
     "registration_number",
     "available_services",
     "available_workshops",
+    "available_workshop_types",
     "suggested_service_type_id",
-    "suggested_workshop_ids",
+    "suggested_workshop_types",
     "status",
     "appointment_id",
     "openai_model",

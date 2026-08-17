@@ -1,7 +1,10 @@
 export {
   ALLOWED_SERVICE_TYPE_IDS,
   ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
+  getCompatibleWorkshopTypesForServiceCode,
   getCompatibleWorkshopIdsForServiceCode,
+  type AiDiagnosticWorkshopType,
 } from "./ai-diagnostic.constants.js";
 export {
   AiDiagnosticModelOutputSchema,

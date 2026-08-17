@@ -13,7 +13,7 @@ const [
   { env },
   {
     ALLOWED_SERVICE_TYPE_IDS,
-    ALLOWED_WORKSHOP_IDS,
+    ALLOWED_WORKSHOP_TYPES,
     AiDiagnosticModelOutputSchema,
     validateAiDiagnosticBusinessRules,
   },
@@ -55,17 +55,17 @@ const forbiddenPublicKeys = new Set([
   "vin",
 ]);
 
-const compatibleWorkshopIdsByServiceId = new Map<
+const compatibleWorkshopTypesByServiceId = new Map<
   number,
-  ReadonlySet<number>
+  ReadonlySet<string>
 >([
-  [2, new Set([1, 2])],
-  [3, new Set([1, 2])],
-  [4, new Set([3])],
-  [5, new Set([4])],
-  [6, new Set([3])],
-  [7, new Set([4])],
-  [8, new Set([1, 2])],
+  [2, new Set(["diagnostic", "mecanique"])],
+  [3, new Set(["diagnostic", "mecanique"])],
+  [4, new Set(["carrosserie"])],
+  [5, new Set(["peinture"])],
+  [6, new Set(["carrosserie"])],
+  [7, new Set(["peinture"])],
+  [8, new Set(["diagnostic", "mecanique"])],
 ]);
 
 const containsForbiddenPublicContent = (value: unknown): boolean => {
@@ -219,11 +219,11 @@ const main = async () => {
     const diagnostic = parsedResponse.data.data;
     const businessRulesResult = validateAiDiagnosticBusinessRules(diagnostic);
     const allowedServiceIds = new Set<number>(ALLOWED_SERVICE_TYPE_IDS);
-    const allowedWorkshopIds = new Set<number>(ALLOWED_WORKSHOP_IDS);
-    const compatibleWorkshopIds =
+    const allowedWorkshopTypes = new Set<string>(ALLOWED_WORKSHOP_TYPES);
+    const compatibleWorkshopTypes =
       diagnostic.suggested_service_type_id === null
         ? undefined
-        : compatibleWorkshopIdsByServiceId.get(
+        : compatibleWorkshopTypesByServiceId.get(
             diagnostic.suggested_service_type_id,
           );
 
@@ -242,13 +242,13 @@ const main = async () => {
       diagnostic.sav_notes.trim().length === 0 ||
       (diagnostic.suggested_service_type_id !== null &&
         !allowedServiceIds.has(diagnostic.suggested_service_type_id)) ||
-      diagnostic.suggested_workshop_ids.some(
-        (workshopId) => !allowedWorkshopIds.has(workshopId),
+      diagnostic.suggested_workshop_types.some(
+        (workshopType) => !allowedWorkshopTypes.has(workshopType),
       ) ||
       (diagnostic.suggested_service_type_id !== null &&
-        (compatibleWorkshopIds === undefined ||
-          diagnostic.suggested_workshop_ids.some(
-            (workshopId) => !compatibleWorkshopIds.has(workshopId),
+        (compatibleWorkshopTypes === undefined ||
+          diagnostic.suggested_workshop_types.some(
+            (workshopType) => !compatibleWorkshopTypes.has(workshopType),
           ))) ||
       containsForbiddenPublicContent(diagnostic) ||
       JSON.stringify(diagnostic).includes(accessToken)

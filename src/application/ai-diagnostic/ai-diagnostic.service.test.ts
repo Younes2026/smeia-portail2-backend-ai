@@ -35,8 +35,11 @@ const createInput = (): AiDiagnosticInput => ({
   available_services: [
     { id: 2, name: "Service test", code: "MEC-DIAG B" },
   ],
-  available_workshops: [
-    { id: 1, name: "Atelier test", workshop_type: "mechanical" },
+  available_workshop_types: [
+    "diagnostic",
+    "mecanique",
+    "carrosserie",
+    "peinture",
   ],
   image: null,
 });
@@ -55,7 +58,7 @@ const createReadyOutput = (): AiDiagnosticModelOutput => ({
   driving_advice: "caution",
   safety_message: "Faites contrôler le véhicule rapidement.",
   suggested_service_type_id: 2,
-  suggested_workshop_ids: [1],
+  suggested_workshop_types: ["diagnostic"],
   questions: [],
   client_message: "Un contrôle du freinage est recommandé.",
   sav_notes: "Contrôler le système de freinage.",
@@ -117,9 +120,9 @@ const expectAiError = async (
   return caughtError;
 };
 
-test("uses prompt version 1.2.0", () => {
-  assert.equal(AI_DIAGNOSTIC_PROMPT_VERSION, "1.2.0");
-  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /Version du prompt : 1\.2\.0/);
+test("uses prompt version 1.3.0", () => {
+  assert.equal(AI_DIAGNOSTIC_PROMPT_VERSION, "1.3.0");
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /Version du prompt : 1\.3\.0/);
 });
 
 test("includes the three-status consistency table in the prompt", () => {
@@ -131,7 +134,7 @@ test("includes the three-status consistency table in the prompt", () => {
   }
 
   assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /suggested_service_type_id = null/);
-  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /suggested_workshop_ids = \[\]/);
+  assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /suggested_workshop_types = \[\]/);
   assert.match(AI_DIAGNOSTIC_SYSTEM_PROMPT, /image_analysis\.useful = false/);
 });
 
@@ -225,6 +228,27 @@ test("sends previous answers as input text", async () => {
   assert.deepEqual(payload.previous_answers, [previousAnswer]);
 });
 
+test("sends only logical workshop types in the OpenAI catalog", async () => {
+  const harness = createHarness(async () =>
+    completedResponse(createReadyOutput()),
+  );
+
+  await harness.service.analyzeAiDiagnostic(createInput());
+
+  const textContent = harness.requests[0]?.input[0]?.content.find(
+    (content) => content.type === "input_text",
+  );
+  assert.ok(textContent);
+  const payload = JSON.parse(textContent.text) as Record<string, unknown>;
+  assert.deepEqual(payload.available_workshop_types, [
+    "diagnostic",
+    "mecanique",
+    "carrosserie",
+    "peinture",
+  ]);
+  assert.equal("available_workshops" in payload, false);
+});
+
 test("refuses an analysis when the API key is absent", async () => {
   let clientCreated = false;
   const clientFactory: AiDiagnosticOpenAIClientFactory = () => {
@@ -263,7 +287,7 @@ test("returns a valid needs_questions output", async () => {
     ...createReadyOutput(),
     diagnosis_status: "needs_questions",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     questions: [
       {
         id: "question_1",
@@ -286,7 +310,7 @@ test("returns a valid out_of_scope output", async () => {
     ...createReadyOutput(),
     diagnosis_status: "out_of_scope",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     client_message:
       "Cet assistant traite uniquement les demandes SAV automobile.",
   };
@@ -321,7 +345,7 @@ test("rejects an absent structured output", async () => {
 
   assert.equal(error.reason, "OUTPUT_PARSED_MISSING");
   assert.deepEqual(error.issue_paths, []);
-  assert.equal(error.prompt_version, "1.2.0");
+  assert.equal(error.prompt_version, "1.3.0");
 });
 
 test("rejects an incomplete provider response", async () => {
@@ -384,7 +408,7 @@ test("maps a returned schema violation to a distinct safe reason", async () => {
 
 test("rejects an output that violates business rules", async () => {
   const invalidOutput = createReadyOutput();
-  invalidOutput.suggested_workshop_ids = [1, 1];
+  invalidOutput.suggested_workshop_types = ["diagnostic", "diagnostic"];
   invalidOutput.client_message = "sensitive-model-output";
   const harness = createHarness(async () => completedResponse(invalidOutput));
 
@@ -394,7 +418,7 @@ test("rejects an output that violates business rules", async () => {
   );
 
   assert.equal(error.reason, "BUSINESS_RULE_VIOLATION");
-  assert.deepEqual(error.issue_paths, ["suggested_workshop_ids"]);
+  assert.deepEqual(error.issue_paths, ["suggested_workshop_types"]);
   assert.equal(JSON.stringify(error).includes("sensitive-model-output"), false);
 });
 
@@ -412,18 +436,22 @@ test("rejects a service absent from the received catalog", async () => {
   assert.deepEqual(error.issue_paths, ["suggested_service_type_id"]);
 });
 
-test("rejects a workshop absent from the received catalog", async () => {
+test("rejects a workshop type absent from the received catalog", async () => {
   const output = createReadyOutput();
-  output.suggested_workshop_ids = [2];
+  output.suggested_workshop_types = ["mecanique"];
   const harness = createHarness(async () => completedResponse(output));
+  const input: AiDiagnosticInput = {
+    ...createInput(),
+    available_workshop_types: ["diagnostic"],
+  };
 
   const error = await expectAiError(
-    harness.service.analyzeAiDiagnostic(createInput()),
+    harness.service.analyzeAiDiagnostic(input),
     "AI_INVALID_OUTPUT",
   );
 
-  assert.equal(error.reason, "WORKSHOP_NOT_IN_CATALOG");
-  assert.deepEqual(error.issue_paths, ["suggested_workshop_ids"]);
+  assert.equal(error.reason, "WORKSHOP_TYPE_NOT_IN_CATALOG");
+  assert.deepEqual(error.issue_paths, ["suggested_workshop_types"]);
 });
 
 test("rejects image_provided true when no photo was supplied", async () => {
@@ -440,44 +468,37 @@ test("rejects image_provided true when no photo was supplied", async () => {
   assert.deepEqual(error.issue_paths, ["image_analysis.image_provided"]);
 });
 
-type WorkshopId = 1 | 2 | 3 | 4;
+type WorkshopType = AiDiagnosticInput["available_workshop_types"][number];
 type ServiceId = 2 | 3 | 4 | 5 | 6 | 7 | 8;
-
-const workshopCatalog: Record<
-  WorkshopId,
-  AiDiagnosticInput["available_workshops"][number]
-> = {
-  1: { id: 1, name: "Atelier diagnostic", workshop_type: "diagnostic" },
-  2: { id: 2, name: "Atelier mécanique", workshop_type: "mecanique" },
-  3: { id: 3, name: "Atelier carrosserie", workshop_type: "carrosserie" },
-  4: { id: 4, name: "Atelier peinture", workshop_type: "peinture" },
-};
 
 const createCompatibilityCase = (
   service: { id: ServiceId; code: string },
-  workshopIds: readonly WorkshopId[],
+  workshopTypes: readonly WorkshopType[],
 ) => {
   const output = createReadyOutput();
   output.suggested_service_type_id = service.id;
-  output.suggested_workshop_ids = [...workshopIds];
+  output.suggested_workshop_types = [...workshopTypes];
   const harness = createHarness(async () => completedResponse(output));
   const input: AiDiagnosticInput = {
     ...createInput(),
     available_services: [
       { id: service.id, name: "Service catalogue", code: service.code },
     ],
-    available_workshops: [1, 2, 3, 4].map(
-      (id) => workshopCatalog[id as WorkshopId],
-    ),
+    available_workshop_types: [
+      "diagnostic",
+      "mecanique",
+      "carrosserie",
+      "peinture",
+    ],
   };
 
   return { harness, input };
 };
 
-test("accepts MEC-DIAG B with workshop 1", async () => {
+test("accepts MEC-DIAG B with diagnostic", async () => {
   const { harness, input } = createCompatibilityCase(
     { id: 2, code: "MEC-DIAG B" },
-    [1],
+    ["diagnostic"],
   );
 
   assert.equal(
@@ -486,10 +507,10 @@ test("accepts MEC-DIAG B with workshop 1", async () => {
   );
 });
 
-test("accepts MEC-DIAG B with workshop 2", async () => {
+test("accepts MEC-DIAG B with mecanique", async () => {
   const { harness, input } = createCompatibilityCase(
     { id: 2, code: "MEC-DIAG B" },
-    [2],
+    ["mecanique"],
   );
 
   assert.equal(
@@ -498,11 +519,23 @@ test("accepts MEC-DIAG B with workshop 2", async () => {
   );
 });
 
-test("rejects MEC-DIAG B with workshop 3 or 4", async () => {
-  for (const workshopId of [3, 4] as const) {
+test("accepts MEC-DIAG B with diagnostic and mecanique", async () => {
+  const { harness, input } = createCompatibilityCase(
+    { id: 2, code: "MEC-DIAG B" },
+    ["diagnostic", "mecanique"],
+  );
+
+  assert.equal(
+    (await harness.service.analyzeAiDiagnostic(input)).diagnosis_status,
+    "ready",
+  );
+});
+
+test("rejects MEC-DIAG B with carrosserie or peinture", async () => {
+  for (const workshopType of ["carrosserie", "peinture"] as const) {
     const { harness, input } = createCompatibilityCase(
       { id: 2, code: "MEC-DIAG B" },
-      [workshopId],
+      [workshopType],
     );
     const error = await expectAiError(
       harness.service.analyzeAiDiagnostic(input),
@@ -512,15 +545,15 @@ test("rejects MEC-DIAG B with workshop 3 or 4", async () => {
     assert.equal(error.reason, "SERVICE_WORKSHOP_MISMATCH");
     assert.deepEqual(error.issue_paths, [
       "suggested_service_type_id",
-      "suggested_workshop_ids",
+      "suggested_workshop_types",
     ]);
   }
 });
 
-test("accepts CAR with workshop 3", async () => {
+test("accepts CAR with carrosserie", async () => {
   const { harness, input } = createCompatibilityCase(
     { id: 4, code: "CAR" },
-    [3],
+    ["carrosserie"],
   );
 
   assert.equal(
@@ -529,11 +562,15 @@ test("accepts CAR with workshop 3", async () => {
   );
 });
 
-test("rejects CAR with workshop 1, 2, or 4", async () => {
-  for (const workshopId of [1, 2, 4] as const) {
+test("rejects CAR with diagnostic, mecanique, or peinture", async () => {
+  for (const workshopType of [
+    "diagnostic",
+    "mecanique",
+    "peinture",
+  ] as const) {
     const { harness, input } = createCompatibilityCase(
       { id: 4, code: "CAR" },
-      [workshopId],
+      [workshopType],
     );
     const error = await expectAiError(
       harness.service.analyzeAiDiagnostic(input),
@@ -544,10 +581,10 @@ test("rejects CAR with workshop 1, 2, or 4", async () => {
   }
 });
 
-test("accepts PEINT with workshop 4", async () => {
+test("accepts PEINT with peinture", async () => {
   const { harness, input } = createCompatibilityCase(
     { id: 5, code: "PEINT" },
-    [4],
+    ["peinture"],
   );
 
   assert.equal(
@@ -556,11 +593,15 @@ test("accepts PEINT with workshop 4", async () => {
   );
 });
 
-test("rejects PEINT with workshop 1, 2, or 3", async () => {
-  for (const workshopId of [1, 2, 3] as const) {
+test("rejects PEINT with diagnostic, mecanique, or carrosserie", async () => {
+  for (const workshopType of [
+    "diagnostic",
+    "mecanique",
+    "carrosserie",
+  ] as const) {
     const { harness, input } = createCompatibilityCase(
       { id: 5, code: "PEINT" },
-      [workshopId],
+      [workshopType],
     );
     const error = await expectAiError(
       harness.service.analyzeAiDiagnostic(input),
@@ -594,7 +635,7 @@ test("accepts a coherent needs_questions result for BMW Unknown without a photo"
     ...createReadyOutput(),
     diagnosis_status: "needs_questions",
     suggested_service_type_id: null,
-    suggested_workshop_ids: [],
+    suggested_workshop_types: [],
     questions: [
       {
         id: "question_1",

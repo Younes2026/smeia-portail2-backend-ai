@@ -9,7 +9,7 @@ const [
   { createApp },
   {
     ALLOWED_SERVICE_TYPE_IDS,
-    ALLOWED_WORKSHOP_IDS,
+    ALLOWED_WORKSHOP_TYPES,
     AiDiagnosticModelOutputSchema,
   },
 ] = await Promise.all([
@@ -161,15 +161,15 @@ const main = async () => {
 
     const diagnostic = parsedResponse.data.data;
     const allowedServiceIds = new Set<number>(ALLOWED_SERVICE_TYPE_IDS);
-    const allowedWorkshopIds = new Set<number>(ALLOWED_WORKSHOP_IDS);
+    const allowedWorkshopTypes = new Set<string>(ALLOWED_WORKSHOP_TYPES);
 
     if (
       (diagnostic.diagnosis_status !== "ready" &&
         diagnostic.diagnosis_status !== "needs_questions") ||
       (diagnostic.suggested_service_type_id !== null &&
         !allowedServiceIds.has(diagnostic.suggested_service_type_id)) ||
-      diagnostic.suggested_workshop_ids.some(
-        (workshopId) => !allowedWorkshopIds.has(workshopId),
+      diagnostic.suggested_workshop_types.some(
+        (workshopType) => !allowedWorkshopTypes.has(workshopType),
       ) ||
       containsForbiddenPublicKey(diagnostic) ||
       JSON.stringify(diagnostic).includes(accessToken)

@@ -22,7 +22,12 @@ const imagePath = fileURLToPath(
 );
 
 const allowedServiceIds = new Set([2, 3, 4, 5, 6, 7, 8]);
-const allowedWorkshopIds = new Set([1, 2, 3, 4]);
+const allowedWorkshopTypes = new Set([
+  "diagnostic",
+  "mecanique",
+  "carrosserie",
+  "peinture",
+]);
 
 try {
   const imageStats = await stat(imagePath);
@@ -77,19 +82,11 @@ try {
         code: "MEC-DIAG B",
       },
     ],
-    available_workshops: [
-      { id: 1, name: "Atelier Rapide", workshop_type: "diagnostic" },
-      {
-        id: 2,
-        name: "Atelier mécanique & Diag",
-        workshop_type: "mecanique",
-      },
-      {
-        id: 3,
-        name: "Atelier carrosserie",
-        workshop_type: "carrosserie",
-      },
-      { id: 4, name: "Atelier peinture", workshop_type: "peinture" },
+    available_workshop_types: [
+      "diagnostic",
+      "mecanique",
+      "carrosserie",
+      "peinture",
     ],
     image: {
       mime_type: "image/jpeg",
@@ -111,8 +108,8 @@ try {
   if (
     (diagnostic.suggested_service_type_id !== null &&
       !allowedServiceIds.has(diagnostic.suggested_service_type_id)) ||
-    diagnostic.suggested_workshop_ids.some(
-      (workshopId) => !allowedWorkshopIds.has(workshopId),
+    diagnostic.suggested_workshop_types.some(
+      (workshopType) => !allowedWorkshopTypes.has(workshopType),
     )
   ) {
     throw new AiDiagnosticError("AI_INVALID_OUTPUT");

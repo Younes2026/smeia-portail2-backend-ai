@@ -1,7 +1,7 @@
 import { env } from "../../config/env.js";
 import {
   AiDiagnosticModelOutputSchema,
-  getCompatibleWorkshopIdsForServiceCode,
+  getCompatibleWorkshopTypesForServiceCode,
   type AiDiagnosticModelOutput,
   validateAiDiagnosticBusinessRules,
 } from "../../domain/ai-diagnostic/index.js";
@@ -64,9 +64,7 @@ const validateCatalogSelections = (
   const availableServiceIds = new Set(
     input.available_services.map((service) => service.id),
   );
-  const availableWorkshopIds = new Set(
-    input.available_workshops.map((workshop) => workshop.id),
-  );
+  const availableWorkshopTypes = new Set(input.available_workshop_types);
 
   if (
     output.suggested_service_type_id !== null &&
@@ -78,12 +76,12 @@ const validateCatalogSelections = (
   }
 
   if (
-    output.suggested_workshop_ids.some(
-      (workshopId) => !availableWorkshopIds.has(workshopId),
+    output.suggested_workshop_types.some(
+      (workshopType) => !availableWorkshopTypes.has(workshopType),
     )
   ) {
-    throw createInvalidOutputError("WORKSHOP_NOT_IN_CATALOG", [
-      "suggested_workshop_ids",
+    throw createInvalidOutputError("WORKSHOP_TYPE_NOT_IN_CATALOG", [
+      "suggested_workshop_types",
     ]);
   }
 
@@ -94,21 +92,21 @@ const validateCatalogSelections = (
   const suggestedService = input.available_services.find(
     (service) => service.id === output.suggested_service_type_id,
   );
-  const compatibleWorkshopIds =
+  const compatibleWorkshopTypes =
     suggestedService?.code === null || suggestedService?.code === undefined
       ? undefined
-      : getCompatibleWorkshopIdsForServiceCode(suggestedService.code) ??
+      : getCompatibleWorkshopTypesForServiceCode(suggestedService.code) ??
         undefined;
 
   if (
-    compatibleWorkshopIds === undefined ||
-    output.suggested_workshop_ids.some(
-      (workshopId) => !compatibleWorkshopIds.has(workshopId),
+    compatibleWorkshopTypes === undefined ||
+    output.suggested_workshop_types.some(
+      (workshopType) => !compatibleWorkshopTypes.has(workshopType),
     )
   ) {
     throw createInvalidOutputError("SERVICE_WORKSHOP_MISMATCH", [
       "suggested_service_type_id",
-      "suggested_workshop_ids",
+      "suggested_workshop_types",
     ]);
   }
 };
