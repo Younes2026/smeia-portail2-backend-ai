@@ -2,6 +2,7 @@ import { env } from "../../config/env.js";
 import {
   createDirectusBookingAvailabilityService,
   type DirectusBookingAvailabilityQuery,
+  type DirectusWorkshopResolutionQuery,
 } from "./directus-booking-availability.service.js";
 import {
   createDirectusAppointmentWriteClient,
@@ -96,6 +97,32 @@ export const getDirectusBookingAvailabilitySnapshot = async (
   }
 };
 
+export const resolveDirectusBookingWorkshops = async (
+  query: DirectusWorkshopResolutionQuery,
+) => {
+  const bookingToken = env.DIRECTUS_BOOKING_TOKEN;
+  if (bookingToken === undefined) {
+    throw new DirectusError("DIRECTUS_ERROR");
+  }
+
+  try {
+    return await configuredBookingAvailabilityService.resolveBookingWorkshops(
+      bookingToken,
+      query,
+    );
+  } catch (error: unknown) {
+    if (
+      error instanceof DirectusError &&
+      (error.code === "DIRECTUS_UNAUTHORIZED" ||
+        error.code === "DIRECTUS_FORBIDDEN")
+    ) {
+      throw new DirectusError("DIRECTUS_ERROR");
+    }
+
+    throw error;
+  }
+};
+
 export {
   DirectusAppointmentCreateInputSchema,
   createDirectusAppointmentWriteClient,
@@ -105,9 +132,12 @@ export {
   type DirectusCreatedAppointment,
 } from "./directus-appointment-write-client.js";
 export {
+  DirectusWorkshopResolutionQuerySchema,
   createDirectusBookingAvailabilityService,
   type DirectusBookingAvailabilityQuery,
   type DirectusBookingAvailabilityService,
+  type DirectusWorkshopResolutionQuery,
+  type ResolvedBookingWorkshop,
 } from "./directus-booking-availability.service.js";
 export {
   createDirectusBookingVehicleService,

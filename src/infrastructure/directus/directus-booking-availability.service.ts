@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import {
   ALLOWED_WORKSHOP_IDS,
+  ALLOWED_WORKSHOP_TYPES,
+  type AiDiagnosticWorkshopType,
 } from "../../domain/ai-diagnostic/index.js";
 import {
   BOOKING_SEARCH_WINDOW_DAYS,
@@ -10,6 +12,7 @@ import {
   type BookingAppointment,
   type BookingResource,
   type BookingSchedule,
+  type BookingShowroom,
   type BookingWeekday,
   type BookingWorkshop,
   type DirectusBookingAvailabilitySnapshot,
@@ -22,6 +25,31 @@ const MAX_RESOURCE_ROWS = 1_000;
 const MAX_APPOINTMENT_ROWS = 10_000;
 
 const workshopIdSchema = z.literal(ALLOWED_WORKSHOP_IDS);
+const positiveSafeIntegerSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
+const workshopTypeSchema = z.enum(ALLOWED_WORKSHOP_TYPES);
+
+export const DirectusWorkshopResolutionQuerySchema = z
+  .object({
+    showroomId: positiveSafeIntegerSchema,
+    workshopTypes: z
+      .array(workshopTypeSchema)
+      .min(1)
+      .max(2)
+      .refine(
+        (workshopTypes) =>
+          new Set(workshopTypes).size === workshopTypes.length,
+        { message: "Workshop types must be unique." },
+      ),
+  })
+  .strict();
+
+export type DirectusWorkshopResolutionQuery = z.infer<
+  typeof DirectusWorkshopResolutionQuerySchema
+>;
 
 const workshopRelationSchema = z
   .union([
@@ -78,6 +106,25 @@ const directusShowroomSchema = z
   })
   .strict();
 
+const directusResolvedShowroomSchema = directusShowroomSchema
+  .extend({ id: positiveSafeIntegerSchema })
+  .strict();
+
+const directusResolvedWorkshopSchema = z
+  .object({
+    id: positiveSafeIntegerSchema,
+    name: z.string().trim().min(1),
+    workshop_type: workshopTypeSchema,
+    opening_time: directusTimeSchema,
+    closing_time: directusTimeSchema,
+    working_days: workingDaysSchema,
+    slot_interval_minutes: z.number().int().positive().max(24 * 60),
+    active: z.boolean(),
+    client_bookable: z.boolean(),
+    showroom_id: directusResolvedShowroomSchema,
+  })
+  .strict();
+
 const directusWorkshopSchema = z
   .object({
     id: workshopIdSchema,
@@ -123,6 +170,9 @@ const createResponseSchema = <T extends z.ZodType>(itemSchema: T) =>
   z.object({ data: z.array(itemSchema) }).strict();
 
 const workshopsResponseSchema = createResponseSchema(directusWorkshopSchema);
+const resolvedWorkshopsResponseSchema = createResponseSchema(
+  directusResolvedWorkshopSchema,
+);
 const schedulesResponseSchema = createResponseSchema(directusScheduleSchema);
 const resourcesResponseSchema = createResponseSchema(directusResourceSchema);
 const appointmentsResponseSchema = createResponseSchema(
@@ -135,7 +185,24 @@ export type DirectusBookingAvailabilityQuery = {
   endDate: string;
 };
 
+export type ResolvedBookingWorkshop = {
+  id: number;
+  name: string;
+  workshop_type: AiDiagnosticWorkshopType;
+  opening_time: string;
+  closing_time: string;
+  working_days: BookingWeekday[];
+  slot_interval_minutes: number;
+  active: true;
+  client_bookable: true;
+  showroom: BookingShowroom;
+};
+
 export interface DirectusBookingAvailabilityService {
+  resolveBookingWorkshops(
+    accessToken: string,
+    query: DirectusWorkshopResolutionQuery,
+  ): Promise<ResolvedBookingWorkshop[]>;
   getBookingAvailabilitySnapshot(
     accessToken: string,
     query: DirectusBookingAvailabilityQuery,
@@ -223,6 +290,78 @@ const readPagedRows = async <T>(
 export const createDirectusBookingAvailabilityService = (
   client: DirectusReadClient,
 ): DirectusBookingAvailabilityService => ({
+  async resolveBookingWorkshops(accessToken, query) {
+    const parsedQuery = DirectusWorkshopResolutionQuerySchema.safeParse(query);
+    if (!parsedQuery.success) {
+      // This service already maps invalid internal queries to the controlled
+      // DIRECTUS_INVALID_RESPONSE error (as does the snapshot method below).
+      throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    }
+
+    const { showroomId, workshopTypes } = parsedQuery.data;
+    const workshopParams = new URLSearchParams([
+      [
+        "fields",
+        "id,name,workshop_type,opening_time,closing_time,working_days,slot_interval_minutes,active,client_bookable,showroom_id.id,showroom_id.name,showroom_id.address,showroom_id.city,showroom_id.phone",
+      ],
+      ["filter[showroom_id][_eq]", String(showroomId)],
+      ["filter[workshop_type][_in]", workshopTypes.join(",")],
+      ["filter[active][_eq]", "true"],
+      ["filter[client_bookable][_eq]", "true"],
+      ["limit", String(workshopTypes.length + 1)],
+    ]);
+
+    const payload = await client.getJson(
+      "/items/workshops",
+      workshopParams,
+      accessToken,
+    );
+    const workshops = parsePayload(resolvedWorkshopsResponseSchema, payload);
+    if (workshops.length === 0) {
+      throw new DirectusError("DIRECTUS_NOT_FOUND");
+    }
+
+    const requestedWorkshopTypes = new Set<AiDiagnosticWorkshopType>(
+      workshopTypes,
+    );
+    const workshopByType = new Map<
+      AiDiagnosticWorkshopType,
+      (typeof workshops)[number]
+    >();
+    for (const workshop of workshops) {
+      if (
+        workshop.showroom_id.id !== showroomId ||
+        !requestedWorkshopTypes.has(workshop.workshop_type) ||
+        !workshop.active ||
+        !workshop.client_bookable ||
+        workshopByType.has(workshop.workshop_type)
+      ) {
+        throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+      }
+      workshopByType.set(workshop.workshop_type, workshop);
+    }
+
+    return workshopTypes.map((workshopType) => {
+      const workshop = workshopByType.get(workshopType);
+      if (workshop === undefined) {
+        throw new DirectusError("DIRECTUS_NOT_FOUND");
+      }
+
+      return {
+        id: workshop.id,
+        name: workshop.name,
+        workshop_type: workshop.workshop_type,
+        opening_time: workshop.opening_time,
+        closing_time: workshop.closing_time,
+        working_days: workshop.working_days as BookingWeekday[],
+        slot_interval_minutes: workshop.slot_interval_minutes,
+        active: true,
+        client_bookable: true,
+        showroom: workshop.showroom_id,
+      };
+    });
+  },
+
   async getBookingAvailabilitySnapshot(accessToken, query) {
     const parsedStartDate = IsoDateSchema.safeParse(query.startDate);
     const parsedEndDate = IsoDateSchema.safeParse(query.endDate);
