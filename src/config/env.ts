@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+if (process.env.NODE_TEST_CONTEXT === undefined) {
+  dotenv.config();
+}
 
 const optionalSecretSchema = z.preprocess(
   (value) =>
@@ -20,6 +22,9 @@ const envSchema = z.object({
     .min(100)
     .max(30_000)
     .default(5_000),
+  DIRECTUS_CRC_ROLE_ID: z
+    .uuid()
+    .default("0234F31D-78EC-416E-BE7F-989132F2B065"),
   DIRECTUS_BOOKING_TOKEN: optionalSecretSchema,
   AI_BOOKING_SLOT_SECRET: optionalSecretSchema,
   OPENAI_API_KEY: optionalSecretSchema,
@@ -47,6 +52,7 @@ const parsedEnv = envSchema.safeParse({
   PORT: process.env.PORT,
   DIRECTUS_URL: process.env.DIRECTUS_URL,
   DIRECTUS_TIMEOUT_MS: process.env.DIRECTUS_TIMEOUT_MS,
+  DIRECTUS_CRC_ROLE_ID: process.env.DIRECTUS_CRC_ROLE_ID,
   DIRECTUS_BOOKING_TOKEN: process.env.DIRECTUS_BOOKING_TOKEN,
   AI_BOOKING_SLOT_SECRET: process.env.AI_BOOKING_SLOT_SECRET,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,

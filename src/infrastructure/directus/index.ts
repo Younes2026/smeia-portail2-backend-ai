@@ -1,4 +1,5 @@
 import { env } from "../../config/env.js";
+import type { CrcAppointmentListQuery as DirectusCrcAppointmentsListQuery } from "../../domain/crc-appointments/index.js";
 import {
   createDirectusBookingAvailabilityService,
   type DirectusBookingAvailabilityQuery,
@@ -10,6 +11,8 @@ import {
 } from "./directus-appointment-write-client.js";
 import { createDirectusBookingVehicleService } from "./directus-booking-vehicle.service.js";
 import { createDirectusCatalogService } from "./directus-catalog.service.js";
+import { createDirectusCrcAppointmentsService } from "./directus-crc-appointments.service.js";
+import { createDirectusCurrentUserService } from "./directus-current-user.service.js";
 import { DirectusError } from "./directus-errors.js";
 import { createDirectusHttpClient } from "./directus-http-client.js";
 import { createDirectusVehicleContextService } from "./directus-vehicle-context.service.js";
@@ -49,6 +52,19 @@ const configuredBookingAvailabilityService =
     }),
   );
 
+const configuredCurrentUserService = createDirectusCurrentUserService({
+  baseUrl: env.DIRECTUS_URL,
+  timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+});
+
+const configuredCrcAppointmentsService =
+  createDirectusCrcAppointmentsService(
+    createDirectusHttpClient({
+      baseUrl: env.DIRECTUS_URL,
+      timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+    }),
+  );
+
 export const getDirectusAiCatalogs = (accessToken: string) =>
   configuredCatalogService.getAiCatalogs(accessToken);
 
@@ -75,6 +91,23 @@ export const createDirectusAppointment = (
   accessToken: string,
   input: DirectusAppointmentCreateInput,
 ) => configuredAppointmentWriteClient.createAppointment(accessToken, input);
+
+export const getDirectusCurrentUser = (accessToken: string) =>
+  configuredCurrentUserService.getCurrentUser(accessToken);
+
+export const listDirectusCrcAppointments = (
+  accessToken: string,
+  query: DirectusCrcAppointmentsListQuery,
+) => configuredCrcAppointmentsService.listAppointments(accessToken, query);
+
+export const getDirectusCrcAppointment = (
+  accessToken: string,
+  appointmentId: number,
+) =>
+  configuredCrcAppointmentsService.getAppointment(
+    accessToken,
+    appointmentId,
+  );
 
 export const getDirectusBookingAvailabilitySnapshot = async (
   query: DirectusBookingAvailabilityQuery,
@@ -149,6 +182,16 @@ export {
   type DirectusBookingVehicleIdentity,
   type DirectusBookingVehicleService,
 } from "./directus-booking-vehicle.service.js";
+export {
+  createDirectusCrcAppointmentsService,
+  type DirectusCrcAppointmentsService,
+} from "./directus-crc-appointments.service.js";
+export {
+  createDirectusCurrentUserService,
+  type DirectusCurrentUser,
+  type DirectusCurrentUserService,
+  type DirectusCurrentUserServiceConfig,
+} from "./directus-current-user.service.js";
 
 export {
   createDirectusCatalogService,
