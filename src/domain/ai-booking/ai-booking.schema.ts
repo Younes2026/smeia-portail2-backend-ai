@@ -7,6 +7,7 @@ import {
 import {
   BOOKING_PERIODS,
   BOOKING_RESULT_MODES,
+  BOOKING_SEARCH_WINDOW_DAYS,
   BOOKING_TIME_ZONE,
   MAX_DAY_SLOT_OPTIONS,
 } from "./ai-booking.constants.js";
@@ -102,6 +103,23 @@ export const createAppointmentAvailabilityRequestSchema = (
       return;
     }
 
+    if (
+      request.result_mode === "calendar" &&
+      (request.preferred_date !== null || request.preferred_period !== "any")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: [
+          request.preferred_date !== null
+            ? "preferred_date"
+            : "preferred_period",
+        ],
+        message:
+          "Calendar mode covers the complete booking horizon and all periods.",
+      });
+      return;
+    }
+
     if (request.preferred_date === null) {
       return;
     }
@@ -157,6 +175,51 @@ export const AppointmentAvailabilityResultSchema = z
       .max(MAX_DAY_SLOT_OPTIONS),
   })
   .strict();
+
+export const AppointmentAvailabilityCalendarDaySchema = z
+  .object({
+    date: IsoDateSchema,
+    available_slot_count: z.number().int().positive(),
+    morning_slot_count: z.number().int().nonnegative(),
+    afternoon_slot_count: z.number().int().nonnegative(),
+  })
+  .strict()
+  .refine(
+    (day) =>
+      day.available_slot_count ===
+      day.morning_slot_count + day.afternoon_slot_count,
+    "The period counts must equal the available slot count.",
+  );
+
+export const AppointmentAvailabilityCalendarResultSchema = z
+  .object({
+    result_mode: z.literal("calendar"),
+    timezone: z.literal(BOOKING_TIME_ZONE),
+    horizon_start: IsoDateSchema,
+    horizon_end: IsoDateSchema,
+    days: z
+      .array(AppointmentAvailabilityCalendarDaySchema)
+      .max(BOOKING_SEARCH_WINDOW_DAYS),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const dates = result.days.map((day) => day.date);
+    if (
+      result.horizon_start > result.horizon_end ||
+      dates.some(
+        (date, index) =>
+          date < result.horizon_start ||
+          date > result.horizon_end ||
+          (index > 0 && date <= (dates[index - 1] ?? date)),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["days"],
+        message: "Calendar days must be unique, sorted and within the horizon.",
+      });
+    }
+  });
 
 export const BookingServiceTypeSchema = z
   .object({
@@ -240,6 +303,12 @@ export type AppointmentAvailabilityOption = z.infer<
 >;
 export type AppointmentAvailabilityResult = z.infer<
   typeof AppointmentAvailabilityResultSchema
+>;
+export type AppointmentAvailabilityCalendarDay = z.infer<
+  typeof AppointmentAvailabilityCalendarDaySchema
+>;
+export type AppointmentAvailabilityCalendarResult = z.infer<
+  typeof AppointmentAvailabilityCalendarResultSchema
 >;
 export type BookingServiceType = z.infer<typeof BookingServiceTypeSchema>;
 export type SecuredAppointmentAvailabilityOption = z.infer<

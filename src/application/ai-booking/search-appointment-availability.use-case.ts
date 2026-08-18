@@ -3,12 +3,15 @@ import {
 } from "../../domain/ai-diagnostic/index.js";
 import {
   BOOKING_SEARCH_WINDOW_DAYS,
+  AppointmentAvailabilityCalendarResultSchema,
   SecuredAppointmentAvailabilityResultSchema,
   addIsoDateDays,
   createAppointmentAvailabilityRequestSchema,
   findAppointmentAvailability,
+  findAppointmentAvailabilityCalendar,
   getCasablancaIsoDate,
   getCasablancaIsoTime,
+  type AppointmentAvailabilityCalendarResult,
   type BookingWorkshopType,
   type DirectusBookingAvailabilitySnapshot,
   type SecuredAppointmentAvailabilityResult,
@@ -54,7 +57,9 @@ export type SearchAppointmentAvailabilityUseCaseDependencies = {
 export type SearchAppointmentAvailabilityUseCase = (
   accessToken: string,
   request: unknown,
-) => Promise<SecuredAppointmentAvailabilityResult>;
+) => Promise<
+  SecuredAppointmentAvailabilityResult | AppointmentAvailabilityCalendarResult
+>;
 
 const validateRequestedServiceContext = (
   request: {
@@ -94,7 +99,9 @@ export const createSearchAppointmentAvailabilityUseCase = (
       today,
       globalEndDate,
     ).parse(rawRequest);
-    dependencies.slotTokenService.assertConfigured();
+    if (request.result_mode !== "calendar") {
+      dependencies.slotTokenService.assertConfigured();
+    }
     await dependencies.getVehicleContext(accessToken, request.vehicle_id);
     let service: AvailableService;
     try {
@@ -129,7 +136,10 @@ export const createSearchAppointmentAvailabilityUseCase = (
       throw error;
     }
 
-    const startDate = request.preferred_date ?? today;
+    const startDate =
+      request.result_mode === "calendar"
+        ? today
+        : request.preferred_date ?? today;
     const endDate =
       request.result_mode === "day_slots" ? startDate : globalEndDate;
     const snapshot = await dependencies.getBookingSnapshot({
@@ -138,6 +148,22 @@ export const createSearchAppointmentAvailabilityUseCase = (
       startDate,
       endDate,
     });
+
+    if (request.result_mode === "calendar") {
+      return AppointmentAvailabilityCalendarResultSchema.parse(
+        findAppointmentAvailabilityCalendar(
+          request,
+          snapshot,
+          startDate,
+          endDate,
+          {
+            date: today,
+            time: getCasablancaIsoTime(now),
+          },
+        ),
+      );
+    }
+
     const result = findAppointmentAvailability(
       request,
       snapshot,

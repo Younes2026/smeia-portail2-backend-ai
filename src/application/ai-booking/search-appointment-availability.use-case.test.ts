@@ -222,6 +222,7 @@ test("resolves Tanger carrosserie to physical workshop 24", async () => {
     workshop_types: ["carrosserie"],
   });
 
+  assert.ok("options" in result);
   assert.equal(result.options[0]?.workshop_id, 24);
   assert.equal(result.options[0]?.showroom.id, 5);
   assert.deepEqual(harness.snapshotQueries[0], {
@@ -252,6 +253,7 @@ test("returns the service name and one signed token for each of at most three op
     now: () => TODAY,
   });
 
+  assert.ok("options" in result);
   assert.equal(result.options.length, 3);
   assert.ok(result.options.every((option) => option.slot_token.length > 0));
   assert.ok(
@@ -291,6 +293,7 @@ test("day-slots reads one date and signs every returned option", async () => {
     now: () => TODAY,
   });
 
+  assert.ok("options" in result);
   assert.deepEqual(harness.snapshotQueries, [
     {
       workshopIds: [20],
@@ -431,4 +434,85 @@ test("returns a controlled configuration error before any Directus read", async 
   assert.equal(harness.serviceCalls.length, 0);
   assert.equal(harness.resolverQueries.length, 0);
   assert.equal(harness.snapshotQueries.length, 0);
+});
+
+test("calendar resolves and loads the complete horizon exactly once without signing tokens", async () => {
+  const harness = createHarness({ slotSecret: " " });
+  const result = await harness.useCase(CLIENT_TOKEN, {
+    vehicle_id: 14,
+    service_type_id: 2,
+    showroom_id: 8,
+    workshop_types: ["mecanique"],
+    result_mode: "calendar",
+  });
+
+  assert.ok("days" in result);
+  assert.deepEqual(harness.resolverQueries, [
+    { showroomId: 8, workshopTypes: ["mecanique"] },
+  ]);
+  assert.deepEqual(harness.snapshotQueries, [
+    {
+      workshopIds: [20],
+      showroomId: 8,
+      startDate: "2026-08-10",
+      endDate: "2026-09-08",
+    },
+  ]);
+  assert.equal(harness.vehicleCalls.length, 1);
+  assert.equal(harness.serviceCalls.length, 1);
+  assert.deepEqual(result.days, [
+    {
+      date: "2026-08-12",
+      available_slot_count: 18,
+      morning_slot_count: 8,
+      afternoon_slot_count: 10,
+    },
+  ]);
+  assert.equal(JSON.stringify(result).includes("slot_token"), false);
+});
+
+test("calendar preserves Tanger showroom isolation with physical workshop 24", async () => {
+  const tangerWorkshop: ResolvedBookingWorkshop = {
+    ...resolvedWorkshop,
+    id: 24,
+    name: "Atelier Tanger",
+    workshop_type: "carrosserie",
+    showroom: {
+      ...resolvedWorkshop.showroom,
+      id: 5,
+      name: "Tanger",
+      city: "Tanger",
+    },
+  };
+  const harness = createHarness({
+    resolveWorkshops: async () => [tangerWorkshop],
+    bookingSnapshot: {
+      workshops: [tangerWorkshop],
+      schedules: [{ ...snapshot.schedules[0]!, workshop_id: 24 }],
+      resources: [{ workshop_id: 24, active: true, daily_hours: 9 }],
+      appointments: [],
+    },
+  });
+
+  const result = await harness.useCase(CLIENT_TOKEN, {
+    vehicle_id: 14,
+    service_type_id: 4,
+    showroom_id: 5,
+    workshop_types: ["carrosserie"],
+    result_mode: "calendar",
+  });
+
+  assert.ok("days" in result);
+  assert.equal(result.days[0]?.available_slot_count, 18);
+  assert.deepEqual(harness.resolverQueries, [
+    { showroomId: 5, workshopTypes: ["carrosserie"] },
+  ]);
+  assert.deepEqual(harness.snapshotQueries, [
+    {
+      workshopIds: [24],
+      showroomId: 5,
+      startDate: "2026-08-10",
+      endDate: "2026-09-08",
+    },
+  ]);
 });

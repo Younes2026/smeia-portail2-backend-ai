@@ -13,7 +13,11 @@ export const OCCUPYING_APPOINTMENT_STATUSES = [
 
 export const BOOKING_PERIODS = ["any", "morning", "afternoon"] as const;
 
-export const BOOKING_RESULT_MODES = ["suggestions", "day_slots"] as const;
+export const BOOKING_RESULT_MODES = [
+  "suggestions",
+  "day_slots",
+  "calendar",
+] as const;
 
 export const BOOKING_WEEKDAYS = [
   "monday",

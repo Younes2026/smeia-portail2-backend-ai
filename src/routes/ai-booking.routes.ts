@@ -19,7 +19,8 @@ export const AI_BOOKING_JSON_LIMIT = "32kb";
 export type AiBookingRouterDependencies = {
   searchAvailability: SearchAppointmentAvailabilityUseCase;
   confirmAppointment: ConfirmAppointmentUseCase;
-  rateLimiter: AiRateLimiter;
+  availabilityRateLimiter: AiRateLimiter;
+  confirmationRateLimiter: AiRateLimiter;
 };
 
 const rejectQueryParameters: RequestHandler = (
@@ -50,7 +51,7 @@ export const createAiBookingRouter = (
     bearerAuthMiddleware,
     rejectQueryParameters,
     createAiRateLimitMiddleware(
-      dependencies.rateLimiter,
+      dependencies.availabilityRateLimiter,
       "BOOKING_RATE_LIMIT_EXCEEDED",
       "Too many appointment availability requests.",
     ),
@@ -74,7 +75,7 @@ export const createAiBookingRouter = (
     bearerAuthMiddleware,
     rejectQueryParameters,
     createAiRateLimitMiddleware(
-      dependencies.rateLimiter,
+      dependencies.confirmationRateLimiter,
       "BOOKING_RATE_LIMIT_EXCEEDED",
       "Too many appointment confirmation requests.",
     ),

@@ -7,7 +7,9 @@ import {
   type BOOKING_WEEKDAYS,
 } from "./ai-booking.constants.js";
 import {
+  AppointmentAvailabilityCalendarResultSchema,
   AppointmentAvailabilityResultSchema,
+  type AppointmentAvailabilityCalendarResult,
   type AppointmentAvailabilityOption,
   type AppointmentAvailabilityResult,
   type BookingShowroom,
@@ -148,13 +150,14 @@ type RankedOption = {
   option: AppointmentAvailabilityOption;
 };
 
-export const findAppointmentAvailability = (
+const findRankedAppointmentAvailability = (
   request: AppointmentAvailabilityRequest,
   snapshot: DirectusBookingAvailabilitySnapshot,
   startDate: string,
   endDate: string,
   notBefore?: { date: string; time: string },
-): AppointmentAvailabilityResult => {
+  calendarMode = false,
+): RankedOption[] => {
   const searchStartDate =
     request.result_mode === "day_slots" && request.preferred_date !== null
       ? request.preferred_date
@@ -197,6 +200,12 @@ export const findAppointmentAvailability = (
     date = addIsoDateDays(date, 1), dateRank += 1
   ) {
     const weekday = getWeekday(date);
+    if (
+      calendarMode &&
+      (weekday === "saturday" || weekday === "sunday")
+    ) {
+      continue;
+    }
 
     for (const workshop of snapshot.workshops) {
       const workshopRank = requestedWorkshopOrder.get(workshop.workshop_type);
@@ -235,7 +244,10 @@ export const findAppointmentAvailability = (
         slotSeconds += intervalSeconds
       ) {
         const requestedTime = secondsToTime(slotSeconds);
-        if (!isPreferredPeriod(requestedTime, request.preferred_period)) {
+        if (
+          !calendarMode &&
+          !isPreferredPeriod(requestedTime, request.preferred_period)
+        ) {
           continue;
         }
         if (
@@ -276,6 +288,24 @@ export const findAppointmentAvailability = (
       left.workshopRank - right.workshopRank,
   );
 
+  return rankedOptions;
+};
+
+export const findAppointmentAvailability = (
+  request: AppointmentAvailabilityRequest,
+  snapshot: DirectusBookingAvailabilitySnapshot,
+  startDate: string,
+  endDate: string,
+  notBefore?: { date: string; time: string },
+): AppointmentAvailabilityResult => {
+  const rankedOptions = findRankedAppointmentAvailability(
+    request,
+    snapshot,
+    startDate,
+    endDate,
+    notBefore,
+  );
+
   const seenSlotKeys = new Set<string>();
   const deduplicatedOptions =
     request.result_mode === "day_slots"
@@ -306,5 +336,60 @@ export const findAppointmentAvailability = (
   return AppointmentAvailabilityResultSchema.parse({
     preferred_date_available: preferredDateAvailable,
     options,
+  });
+};
+
+export const findAppointmentAvailabilityCalendar = (
+  request: AppointmentAvailabilityRequest,
+  snapshot: DirectusBookingAvailabilitySnapshot,
+  startDate: string,
+  endDate: string,
+  notBefore?: { date: string; time: string },
+): AppointmentAvailabilityCalendarResult => {
+  const rankedOptions = findRankedAppointmentAvailability(
+    request,
+    snapshot,
+    startDate,
+    endDate,
+    notBefore,
+    true,
+  );
+  const seenSlotKeys = new Set<string>();
+  const countsByDate = new Map<
+    string,
+    {
+      available_slot_count: number;
+      morning_slot_count: number;
+      afternoon_slot_count: number;
+    }
+  >();
+
+  for (const { option } of rankedOptions) {
+    const key = `${option.workshop_id}|${option.requested_date}|${option.requested_time}`;
+    if (seenSlotKeys.has(key)) {
+      continue;
+    }
+    seenSlotKeys.add(key);
+
+    const counts = countsByDate.get(option.requested_date) ?? {
+      available_slot_count: 0,
+      morning_slot_count: 0,
+      afternoon_slot_count: 0,
+    };
+    counts.available_slot_count += 1;
+    if (timeToSeconds(option.requested_time) < 12 * 3_600) {
+      counts.morning_slot_count += 1;
+    } else {
+      counts.afternoon_slot_count += 1;
+    }
+    countsByDate.set(option.requested_date, counts);
+  }
+
+  return AppointmentAvailabilityCalendarResultSchema.parse({
+    result_mode: "calendar",
+    timezone: BOOKING_TIME_ZONE,
+    horizon_start: startDate,
+    horizon_end: endDate,
+    days: [...countsByDate].map(([date, counts]) => ({ date, ...counts })),
   });
 };

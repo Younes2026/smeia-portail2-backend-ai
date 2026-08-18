@@ -3,7 +3,9 @@ import test from "node:test";
 
 import type { AppointmentAvailabilityRequest } from "./ai-booking.schema.js";
 import {
+  addIsoDateDays,
   findAppointmentAvailability,
+  findAppointmentAvailabilityCalendar,
   type BookingAppointment,
   type BookingWorkshop,
   type DirectusBookingAvailabilitySnapshot,
@@ -613,4 +615,144 @@ test("day-slots applies the fixed limit of forty after sorting and deduplication
       ["08:15:00", 1],
     ],
   );
+});
+
+test("calendar covers exactly thirty days and excludes Saturdays and Sundays", () => {
+  const schedules = Array.from({ length: 30 }, (_, index) => ({
+    workshop_id: 1,
+    date: addIsoDateDays(MONDAY, index),
+    total_capacity_hours: 36,
+    used_capacity_hours: 0,
+    remaining_capacity_hours: 36,
+  }));
+  const result = findAppointmentAvailabilityCalendar(
+    createRequest({
+      preferred_date: null,
+      result_mode: "calendar",
+    }),
+    createSnapshot({
+      workshops: [
+        createWorkshop(1, {
+          working_days: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        }),
+      ],
+      schedules,
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.equal(result.horizon_start, MONDAY);
+  assert.equal(result.horizon_end, WINDOW_END);
+  assert.equal(result.days.length, 22);
+  assert.equal(result.days[0]?.date, MONDAY);
+  assert.equal(result.days.at(-1)?.date, WINDOW_END);
+  assert.ok(
+    result.days.every(({ date }) => {
+      const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+      return weekday !== 0 && weekday !== 6;
+    }),
+  );
+});
+
+test("calendar excludes a full day and counts a partially available day by period", () => {
+  const result = findAppointmentAvailabilityCalendar(
+    createRequest({
+      preferred_date: null,
+      result_mode: "calendar",
+    }),
+    createSnapshot({
+      schedules: [
+        ...createSnapshot().schedules,
+        {
+          workshop_id: 1,
+          date: TUESDAY,
+          total_capacity_hours: 9,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 9,
+        },
+      ],
+      resources: [{ workshop_id: 1, active: true, daily_hours: 9 }],
+      appointments: [
+        ...Array.from({ length: 18 }, (_, index) =>
+          fillSlot(
+            1,
+            1,
+            "pending",
+            MONDAY,
+            `${String(8 + Math.floor(index / 2)).padStart(2, "0")}:${index % 2 === 0 ? "00" : "30"}:00`,
+          ),
+        ).flat(),
+        ...fillSlot(1, 1, "confirmed", TUESDAY, "08:00:00"),
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(result.days, [
+    {
+      date: TUESDAY,
+      available_slot_count: 17,
+      morning_slot_count: 7,
+      afternoon_slot_count: 10,
+    },
+  ]);
+});
+
+test("calendar ignores the day-slots result limit and contains no slot token", () => {
+  const result = findAppointmentAvailabilityCalendar(
+    createRequest({
+      preferred_date: null,
+      preferred_period: "any",
+      result_mode: "calendar",
+      workshop_types: ["mecanique", "diagnostic"],
+    }),
+    createSnapshot({
+      workshops: [
+        createWorkshop(2, { slot_interval_minutes: 15 }),
+        createWorkshop(1, { slot_interval_minutes: 15 }),
+      ],
+      schedules: [
+        {
+          workshop_id: 2,
+          date: MONDAY,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+        {
+          workshop_id: 1,
+          date: MONDAY,
+          total_capacity_hours: 36,
+          used_capacity_hours: 0,
+          remaining_capacity_hours: 36,
+        },
+      ],
+      resources: [
+        { workshop_id: 2, active: true, daily_hours: 9 },
+        { workshop_id: 1, active: true, daily_hours: 9 },
+      ],
+    }),
+    MONDAY,
+    WINDOW_END,
+  );
+
+  assert.deepEqual(result.days, [
+    {
+      date: MONDAY,
+      available_slot_count: 72,
+      morning_slot_count: 32,
+      afternoon_slot_count: 40,
+    },
+  ]);
+  assert.equal(JSON.stringify(result).includes("slot_token"), false);
 });

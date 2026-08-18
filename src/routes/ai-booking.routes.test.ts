@@ -5,7 +5,10 @@ import test from "node:test";
 
 import type { Express } from "express";
 
-import { createApp } from "../app.js";
+import {
+  BOOKING_AVAILABILITY_RATE_LIMIT_PER_MINUTE,
+  createApp,
+} from "../app.js";
 import {
   BookingAvailabilityError,
   BookingConfirmationError,
@@ -41,6 +44,21 @@ const availability = {
       requested_time: "09:30:00",
       slot_interval_minutes: 30,
       label: "Atelier Rapide — 12/08/2026 à 09:30",
+    },
+  ],
+};
+
+const calendarAvailability = {
+  result_mode: "calendar" as const,
+  timezone: "Africa/Casablanca" as const,
+  horizon_start: "2026-08-10",
+  horizon_end: "2026-09-08",
+  days: [
+    {
+      date: "2026-08-12",
+      available_slot_count: 18,
+      morning_slot_count: 8,
+      afternoon_slot_count: 10,
     },
   ],
 };
@@ -123,12 +141,14 @@ const createHarness = (
   const searchAppointmentAvailability: SearchAppointmentAvailabilityUseCase =
     searchOverride ??
     (async (accessToken, body) => {
-      createAppointmentAvailabilityRequestSchema(
+      const request = createAppointmentAvailabilityRequestSchema(
         "2026-08-10",
         "2026-09-08",
       ).parse(body);
       calls.push({ accessToken, body });
-      return availability;
+      return request.result_mode === "calendar"
+        ? calendarAvailability
+        : availability;
     });
   const application = createApp({
     analyzeDiagnostic: async () => {
@@ -139,7 +159,8 @@ const createHarness = (
     confirmAppointment: async () => {
       throw new Error("Confirmation must not be called by availability tests.");
     },
-    bookingRateLimiter: createAiRateLimiter({ limit }),
+    bookingAvailabilityRateLimiter: createAiRateLimiter({ limit }),
+    bookingConfirmationRateLimiter: createAiRateLimiter({ limit }),
   });
   return { application, calls, getDiagnosticCalls: () => diagnosticCalls };
 };
@@ -185,6 +206,30 @@ test("requires the existing Bearer authentication", async () => {
     });
   });
   assert.equal(harness.calls.length, 0);
+});
+
+test("returns the strict calendar aggregate without tokens or OpenAI", async () => {
+  const harness = createHarness();
+  const calendarBody = {
+    vehicle_id: 14,
+    service_type_id: 2,
+    showroom_id: 8,
+    workshop_types: ["mecanique"],
+    result_mode: "calendar",
+  };
+
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await postAvailability(baseUrl, calendarBody);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload, { data: calendarAvailability });
+    assert.equal(JSON.stringify(payload).includes("slot_token"), false);
+    assert.equal(JSON.stringify(payload).includes("workshop_id"), false);
+  });
+  assert.deepEqual(harness.calls, [
+    { accessToken: CLIENT_TOKEN, body: calendarBody },
+  ]);
+  assert.equal(harness.getDiagnosticCalls(), 0);
 });
 
 test("maps strict validation and no-availability errors", async () => {
@@ -257,6 +302,37 @@ test("rate limits availability independently with a controlled error", async () 
   assert.equal(harness.calls.length, 1);
 });
 
+test("the default availability budget permits normal calendar browsing and stays bounded", async () => {
+  let calls = 0;
+  const application = createApp({
+    analyzeDiagnostic: async () => {
+      throw new Error("Diagnostic must not be called by booking tests.");
+    },
+    searchAppointmentAvailability: async () => {
+      calls += 1;
+      return availability;
+    },
+    confirmAppointment: async () => {
+      throw new Error("Confirmation must not be called by availability tests.");
+    },
+  });
+
+  await withServer(application, async (baseUrl) => {
+    for (
+      let requestNumber = 0;
+      requestNumber < BOOKING_AVAILABILITY_RATE_LIMIT_PER_MINUTE;
+      requestNumber += 1
+    ) {
+      assert.equal((await postAvailability(baseUrl, validBody)).status, 200);
+    }
+
+    const limited = await postAvailability(baseUrl, validBody);
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.has("Retry-After"), true);
+  });
+  assert.equal(calls, BOOKING_AVAILABILITY_RATE_LIMIT_PER_MINUTE);
+});
+
 const createConfirmationHarness = (
   confirmOverride?: ConfirmAppointmentUseCase,
 ) => {
@@ -279,7 +355,8 @@ const createConfirmationHarness = (
       throw new Error("Availability must not be called by confirmation tests.");
     },
     confirmAppointment,
-    bookingRateLimiter: createAiRateLimiter({ limit: 20 }),
+    bookingAvailabilityRateLimiter: createAiRateLimiter({ limit: 20 }),
+    bookingConfirmationRateLimiter: createAiRateLimiter({ limit: 20 }),
   });
   return { application, calls };
 };
@@ -302,6 +379,48 @@ const postConfirmation = (
     body: JSON.stringify(body),
   });
 };
+
+test("keeps availability and confirmation rate limits active and independent", async () => {
+  let availabilityCalls = 0;
+  let confirmationCalls = 0;
+  const application = createApp({
+    analyzeDiagnostic: async () => {
+      throw new Error("Diagnostic must not be called by booking tests.");
+    },
+    searchAppointmentAvailability: async () => {
+      availabilityCalls += 1;
+      return availability;
+    },
+    confirmAppointment: async () => {
+      confirmationCalls += 1;
+      return confirmationResult;
+    },
+    bookingAvailabilityRateLimiter: createAiRateLimiter({ limit: 1 }),
+    bookingConfirmationRateLimiter: createAiRateLimiter({ limit: 1 }),
+  });
+
+  await withServer(application, async (baseUrl) => {
+    assert.equal((await postAvailability(baseUrl, validBody)).status, 200);
+    assert.equal(
+      (await postConfirmation(baseUrl, validConfirmationBody)).status,
+      201,
+    );
+
+    const availabilityLimited = await postAvailability(baseUrl, validBody);
+    assert.equal(availabilityLimited.status, 429);
+    assert.equal(availabilityLimited.headers.has("Retry-After"), true);
+
+    const confirmationLimited = await postConfirmation(
+      baseUrl,
+      validConfirmationBody,
+    );
+    assert.equal(confirmationLimited.status, 429);
+    assert.equal(confirmationLimited.headers.has("Retry-After"), true);
+  });
+
+  assert.equal(availabilityCalls, 1);
+  assert.equal(confirmationCalls, 1);
+});
 
 test("returns only the filtered pending confirmation", async () => {
   const harness = createConfirmationHarness();

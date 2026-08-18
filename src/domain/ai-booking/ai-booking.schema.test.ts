@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AppointmentAvailabilityCalendarResultSchema,
   AppointmentConfirmationRequestSchema,
   BookingIdempotencyKeySchema,
   createAppointmentAvailabilityRequestSchema,
@@ -61,6 +62,89 @@ test("requires a non-null preferred date in day-slots mode", () => {
         preferred_date,
         result_mode: "day_slots",
       }).success,
+      false,
+    );
+  }
+});
+
+test("accepts calendar mode only for the complete horizon and all periods", () => {
+  assert.deepEqual(
+    schema.parse({
+      vehicle_id: 14,
+      service_type_id: 2,
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
+      result_mode: "calendar",
+    }),
+    {
+      vehicle_id: 14,
+      service_type_id: 2,
+      showroom_id: 8,
+      workshop_types: ["mecanique"],
+      preferred_date: null,
+      preferred_period: "any",
+      result_mode: "calendar",
+    },
+  );
+
+  for (const overrides of [
+    { preferred_date: "2026-08-12" },
+    { preferred_period: "morning" },
+  ]) {
+    assert.equal(
+      schema.safeParse({
+        vehicle_id: 14,
+        service_type_id: 2,
+        showroom_id: 8,
+        workshop_types: ["mecanique"],
+        result_mode: "calendar",
+        ...overrides,
+      }).success,
+      false,
+    );
+  }
+});
+
+test("strictly validates the minimal calendar response", () => {
+  const validCalendar = {
+    result_mode: "calendar",
+    timezone: "Africa/Casablanca",
+    horizon_start: "2026-08-10",
+    horizon_end: "2026-09-08",
+    days: [
+      {
+        date: "2026-08-11",
+        available_slot_count: 18,
+        morning_slot_count: 8,
+        afternoon_slot_count: 10,
+      },
+    ],
+  } as const;
+
+  assert.deepEqual(
+    AppointmentAvailabilityCalendarResultSchema.parse(validCalendar),
+    validCalendar,
+  );
+  for (const invalid of [
+    { ...validCalendar, slot_token: "forbidden" },
+    {
+      ...validCalendar,
+      days: [
+        {
+          ...validCalendar.days[0],
+          available_slot_count: 19,
+        },
+      ],
+    },
+    {
+      ...validCalendar,
+      days: [
+        { ...validCalendar.days[0], unexpected: true },
+      ],
+    },
+  ]) {
+    assert.equal(
+      AppointmentAvailabilityCalendarResultSchema.safeParse(invalid).success,
       false,
     );
   }

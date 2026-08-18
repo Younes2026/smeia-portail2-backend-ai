@@ -25,12 +25,15 @@ import { healthRouter } from "./routes/health.routes.js";
 import { createAiBookingRouter } from "./routes/ai-booking.routes.js";
 import { createAiDiagnosticRouter } from "./routes/ai-diagnostic.routes.js";
 
+export const BOOKING_AVAILABILITY_RATE_LIMIT_PER_MINUTE = 12;
+
 export type AppDependencies = {
   analyzeDiagnostic?: AnalyzeAiDiagnosticUseCase;
   rateLimiter?: AiRateLimiter;
   searchAppointmentAvailability?: SearchAppointmentAvailabilityUseCase;
   confirmAppointment?: ConfirmAppointmentUseCase;
-  bookingRateLimiter?: AiRateLimiter;
+  bookingAvailabilityRateLimiter?: AiRateLimiter;
+  bookingConfirmationRateLimiter?: AiRateLimiter;
 };
 
 const allowedOrigins = new Set(env.CORS_ORIGINS);
@@ -70,8 +73,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         searchAppointmentAvailabilityUseCase,
       confirmAppointment:
         dependencies.confirmAppointment ?? confirmAppointmentUseCase,
-      rateLimiter:
-        dependencies.bookingRateLimiter ?? createAiRateLimiter(),
+      availabilityRateLimiter:
+        dependencies.bookingAvailabilityRateLimiter ??
+        createAiRateLimiter({
+          limit: BOOKING_AVAILABILITY_RATE_LIMIT_PER_MINUTE,
+        }),
+      confirmationRateLimiter:
+        dependencies.bookingConfirmationRateLimiter ?? createAiRateLimiter(),
     }),
   );
   createdApp.use(express.json({ limit: "1mb" }));
