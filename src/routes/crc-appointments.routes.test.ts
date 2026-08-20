@@ -12,7 +12,7 @@ import {
 } from "../application/crc-appointments/index.js";
 import type { CrcAppointment } from "../domain/crc-appointments/index.js";
 
-const CRC_ROLE_ID = "0234F31D-78EC-416E-BE7F-989132F2B065";
+const CRC_ROLE_ID = "0234F31D-78EC-4166-BE7F-989132F2B065";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ACCESS_TOKEN = "unit-test-crc-token-placeholder";
 
@@ -72,7 +72,10 @@ const withServer = async <T>(
   }
 };
 
-const createHarness = (roleId = CRC_ROLE_ID) => {
+const createHarness = (
+  roleId = CRC_ROLE_ID,
+  options: { omitRole?: boolean } = {},
+) => {
   const listCalls: Array<{ token: string; query: unknown }> = [];
   const getCalls: Array<{ token: string; id: number }> = [];
   let identityCalls = 0;
@@ -95,6 +98,9 @@ const createHarness = (roleId = CRC_ROLE_ID) => {
     async getDirectusCurrentUser(token) {
       identityCalls += 1;
       assert.equal(token, ACCESS_TOKEN);
+      if (options.omitRole === true) {
+        return { id: USER_ID };
+      }
       return {
         id: USER_ID,
         role: { id: roleId, name: roleId === CRC_ROLE_ID ? "Agent CRC" : "Client" },
@@ -181,6 +187,26 @@ test("requires authentication and the exact Agent CRC role", async () => {
     });
   });
   assert.equal(forbiddenHarness.listCalls.length, 0);
+});
+
+test("returns 403 when Directus omits the current user role", async () => {
+  const harness = createHarness(CRC_ROLE_ID, { omitRole: true });
+
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/crc/appointments`, {
+      headers: crcHeaders,
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "CRC_ROLE_REQUIRED",
+        message: "Agent CRC access is required.",
+      },
+    });
+  });
+
+  assert.equal(harness.getIdentityCalls(), 1);
+  assert.equal(harness.listCalls.length, 0);
 });
 
 test("maps invalid and missing CRC appointment details", async () => {

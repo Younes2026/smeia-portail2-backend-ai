@@ -7,7 +7,7 @@ import { HttpError } from "./error-handler.js";
 export type CrcAgentIdentity = {
   userId: string;
   roleId: string;
-  roleName: string;
+  roleName: string | null;
 };
 
 export type CrcRoleMiddlewareDependencies = {
@@ -39,6 +39,8 @@ export const createCrcRoleMiddleware = (
       const accessToken = getDirectusAccessToken(response);
       const currentUser = await dependencies.getCurrentUser(accessToken);
       if (
+        currentUser.role === undefined ||
+        currentUser.role === null ||
         normalizeDirectusRoleId(currentUser.role.id) !== expectedRoleId
       ) {
         throw new HttpError(
@@ -51,7 +53,7 @@ export const createCrcRoleMiddleware = (
       crcAgentByResponse.set(response, {
         userId: currentUser.id,
         roleId: currentUser.role.id,
-        roleName: currentUser.role.name,
+        roleName: currentUser.role.name ?? null,
       });
       next();
     } catch (error: unknown) {

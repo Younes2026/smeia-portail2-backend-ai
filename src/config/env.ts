@@ -24,7 +24,7 @@ const envSchema = z.object({
     .default(5_000),
   DIRECTUS_CRC_ROLE_ID: z
     .uuid()
-    .default("0234F31D-78EC-416E-BE7F-989132F2B065"),
+    .default("0234F31D-78EC-4166-BE7F-989132F2B065"),
   DIRECTUS_BOOKING_TOKEN: optionalSecretSchema,
   AI_BOOKING_SLOT_SECRET: optionalSecretSchema,
   OPENAI_API_KEY: optionalSecretSchema,

@@ -15,7 +15,7 @@ import {
 } from "./crc-role.js";
 import { HttpError } from "./error-handler.js";
 
-const CRC_ROLE_ID = "0234F31D-78EC-416E-BE7F-989132F2B065";
+const CRC_ROLE_ID = "0234F31D-78EC-4166-BE7F-989132F2B065";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ACCESS_TOKEN = "unit-test-crc-token-placeholder";
 
@@ -59,7 +59,7 @@ test("authorizes the configured Agent CRC role without sav_agents", async () => 
       receivedToken = accessToken;
       return {
         id: USER_ID,
-        role: { id: CRC_ROLE_ID, name: "Agent CRC" },
+        role: { id: CRC_ROLE_ID },
       };
     },
   });
@@ -77,8 +77,39 @@ test("authorizes the configured Agent CRC role without sav_agents", async () => 
   assert.deepEqual(getCrcAgentIdentity(response), {
     userId: USER_ID,
     roleId: CRC_ROLE_ID,
-    roleName: "Agent CRC",
+    roleName: null,
   });
+});
+
+test("rejects an absent or null Directus role with a controlled 403", async () => {
+  const request = createRequest(`Bearer ${ACCESS_TOKEN}`);
+
+  for (const currentUser of [
+    { id: USER_ID },
+    { id: USER_ID, role: null },
+  ]) {
+    const response = {} as Response;
+    assert.equal(runBearerMiddleware(request, response), undefined);
+    let forwardedError: unknown;
+    const middleware = createCrcRoleMiddleware({
+      expectedRoleId: CRC_ROLE_ID,
+      async getCurrentUser() {
+        return currentUser;
+      },
+    });
+
+    await middleware(
+      request,
+      response,
+      ((error?: unknown) => {
+        forwardedError = error;
+      }) as NextFunction,
+    );
+
+    assert.ok(forwardedError instanceof HttpError);
+    assert.equal(forwardedError.status, 403);
+    assert.equal(forwardedError.code, "CRC_ROLE_REQUIRED");
+  }
 });
 
 test("rejects every non-CRC role with a controlled 403", async () => {

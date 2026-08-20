@@ -11,9 +11,11 @@ const directusCurrentUserResponseSchema = z
         role: z
           .object({
             id: z.uuid(),
-            name: z.string().trim().min(1),
+            name: z.string().trim().min(1).nullable().optional(),
           })
-          .strict(),
+          .strict()
+          .nullable()
+          .optional(),
       })
       .strict(),
   })

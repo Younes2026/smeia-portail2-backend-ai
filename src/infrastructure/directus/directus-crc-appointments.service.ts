@@ -34,7 +34,6 @@ const nullableTrimmedStringSchema = z
 const directusAppointmentSchema = z
   .object({
     id: positiveSafeIntegerSchema,
-    date_created: nullableTrimmedStringSchema,
     customer_id: z
       .object({
         id: positiveSafeIntegerSchema,
@@ -97,7 +96,6 @@ const directusAppointmentResponseSchema = z
 
 const APPOINTMENT_FIELDS = [
   "id",
-  "date_created",
   "customer_id.id",
   "customer_id.first_name",
   "customer_id.last_name",
@@ -138,7 +136,7 @@ const mapAppointment = (
 ): CrcAppointment =>
   CrcAppointmentSchema.parse({
     id: appointment.id,
-    received_at: appointment.date_created,
+    received_at: null,
     customer: appointment.customer_id,
     vehicle: {
       id: appointment.vehicle_id.id,
@@ -177,10 +175,7 @@ export const createDirectusCrcAppointmentsService = (
     const searchParams = new URLSearchParams([
       ["fields", APPOINTMENT_FIELDS.join(",")],
       ["filter[status][_in]", statusesByQueue[query.queue].join(",")],
-      [
-        "sort",
-        query.queue === "processed" ? "-date_created,-id" : "date_created,id",
-      ],
+      ["sort", "id"],
       ["limit", String(query.limit)],
       ["offset", String(query.offset)],
     ]);

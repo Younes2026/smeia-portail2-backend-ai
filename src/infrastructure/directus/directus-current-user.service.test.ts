@@ -9,7 +9,7 @@ import {
 import type { DirectusFetch } from "./directus-http-client.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
-const CRC_ROLE_ID = "0234F31D-78EC-416E-BE7F-989132F2B065";
+const CRC_ROLE_ID = "0234F31D-78EC-4166-BE7F-989132F2B065";
 const ACCESS_TOKEN = "unit-test-crc-token-placeholder";
 
 const expectDirectusError = async (
@@ -72,6 +72,26 @@ test("rejects missing tokens before fetch", async () => {
     "DIRECTUS_UNAUTHORIZED",
   );
   assert.equal(calls, 0);
+});
+
+test("accepts users/me responses with an absent or null role", async () => {
+  const responses = [
+    { data: { id: USER_ID } },
+    { data: { id: USER_ID, role: null } },
+  ];
+
+  for (const response of responses) {
+    const service = createDirectusCurrentUserService({
+      baseUrl: "https://directus.example.test",
+      timeoutMs: 1_000,
+      fetchImplementation: async () => Response.json(response),
+    });
+
+    assert.deepEqual(
+      await service.getCurrentUser(ACCESS_TOKEN),
+      response.data,
+    );
+  }
 });
 
 test("maps rejected and malformed Directus identity responses", async () => {

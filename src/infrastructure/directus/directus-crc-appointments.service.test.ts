@@ -10,7 +10,6 @@ const ACCESS_TOKEN = "unit-test-crc-token-placeholder";
 
 const directusAppointment = {
   id: 42,
-  date_created: "2026-08-18T08:30:00.000Z",
   customer_id: {
     id: 5,
     first_name: "Sara",
@@ -78,11 +77,12 @@ test("lists every-site CRC appointments with bounded organizational filters", as
     address: "Adresse test",
   });
   assert.equal(result[0]?.requested_time, "09:30:00");
+  assert.equal(result[0]?.received_at, null);
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.endpoint, "/items/appointments");
   assert.equal(calls[0]?.token, ACCESS_TOKEN);
   assert.equal(calls[0]?.params.get("filter[status][_in]"), "pending");
-  assert.equal(calls[0]?.params.get("sort"), "date_created,id");
+  assert.equal(calls[0]?.params.get("sort"), "id");
   assert.equal(
     calls[0]?.params.get("filter[workshop_id][showroom_id][city][_eq]"),
     "Oujda",
@@ -96,6 +96,7 @@ test("lists every-site CRC appointments with bounded organizational filters", as
     calls[0]?.params.get("fields")?.includes("workshop_id.showroom_id.id"),
     true,
   );
+  assert.equal(calls[0]?.params.get("fields")?.includes("date_created"), false);
 });
 
 test("does not add an authorization workshop filter when none is requested", async () => {
@@ -142,7 +143,7 @@ test("maps processed queues without treating filters as permissions", async () =
   );
   assert.equal(
     (capturedParams as URLSearchParams | null)?.get("sort"),
-    "-date_created,-id",
+    "id",
   );
 });
 
