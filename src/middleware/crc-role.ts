@@ -1,6 +1,10 @@
 import type { RequestHandler, Response } from "express";
 
-import type { DirectusCurrentUser } from "../infrastructure/directus/index.js";
+import {
+  CrcDirectusActionStepError,
+  DirectusError,
+  type DirectusCurrentUser,
+} from "../infrastructure/directus/index.js";
 import { getDirectusAccessToken } from "./bearer-auth.js";
 import { HttpError } from "./error-handler.js";
 
@@ -57,7 +61,12 @@ export const createCrcRoleMiddleware = (
       });
       next();
     } catch (error: unknown) {
-      next(error);
+      next(
+        error instanceof DirectusError &&
+          !(error instanceof CrcDirectusActionStepError)
+          ? new CrcDirectusActionStepError(error)
+          : error,
+      );
     }
   };
 };

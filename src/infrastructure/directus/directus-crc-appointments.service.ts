@@ -128,7 +128,7 @@ const statusesByQueue: Record<
   new: ["pending"],
   callback: ["callback_pending"],
   proposed: ["alternative_proposed"],
-  processed: ["confirmed", "rejected", "cancelled"],
+  processed: ["confirmed", "rejected", "cancelled", "arrived"],
 };
 
 const mapAppointment = (

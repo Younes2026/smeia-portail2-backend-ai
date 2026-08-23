@@ -139,7 +139,7 @@ test("maps processed queues without treating filters as permissions", async () =
   );
   assert.equal(
     (capturedParams as URLSearchParams | null)?.get("filter[status][_in]"),
-    "confirmed,rejected,cancelled",
+    "confirmed,rejected,cancelled,arrived",
   );
   assert.equal(
     (capturedParams as URLSearchParams | null)?.get("sort"),

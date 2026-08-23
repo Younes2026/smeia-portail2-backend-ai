@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CrcCallbackActionBodySchema,
+  CrcConfirmActionBodySchema,
+  CrcAppointmentActionResultSchema,
   CrcAppointmentIdParameterSchema,
+  CrcIdempotencyKeySchema,
   CrcAppointmentListQuerySchema,
   CrcAppointmentSchema,
+  CrcRejectActionBodySchema,
 } from "./index.js";
 
 test("applies a bounded pending queue query by default", () => {
@@ -105,5 +110,104 @@ test("accepts only the strict CRC appointment read model", () => {
     CrcAppointmentSchema.safeParse({ ...appointment, sav_agent_id: 3 })
       .success,
     false,
+  );
+});
+
+test("validates strict callback, reject and confirmation action bodies", () => {
+  assert.deepEqual(CrcCallbackActionBodySchema.parse({}), {});
+  assert.deepEqual(
+    CrcCallbackActionBodySchema.parse({
+      callback_due_at: "2026-08-24T10:30:00+01:00",
+      internal_note: " Nouvel appel sans réponse ",
+    }),
+    {
+      callback_due_at: "2026-08-24T10:30:00+01:00",
+      internal_note: "Nouvel appel sans réponse",
+    },
+  );
+  assert.deepEqual(CrcConfirmActionBodySchema.parse({}), {});
+  assert.equal(
+    CrcRejectActionBodySchema.safeParse({ reason_code: "other" }).success,
+    false,
+  );
+  assert.equal(
+    CrcRejectActionBodySchema.safeParse({
+      reason_code: "other",
+      internal_note: "Le motif a été vérifié par le CRC.",
+    }).success,
+    true,
+  );
+  assert.equal(
+    CrcCallbackActionBodySchema.safeParse({ unexpected: true }).success,
+    false,
+  );
+});
+
+test("requires a UUID idempotency key and accepts the arrived status", () => {
+  assert.equal(
+    CrcIdempotencyKeySchema.safeParse(
+      "123e4567-e89b-42d3-a456-426614174000",
+    ).success,
+    true,
+  );
+  assert.equal(CrcIdempotencyKeySchema.safeParse("not-a-uuid").success, false);
+
+  const appointment = {
+    id: 42,
+    received_at: null,
+    customer: null,
+    vehicle: {
+      id: 14,
+      brand_name: null,
+      model: null,
+      registration_number: null,
+    },
+    service_type: { id: 2, name: "Diagnostic" },
+    workshop: {
+      id: 20,
+      name: "Atelier Oujda",
+      workshop_type: "diagnostic",
+      showroom: {
+        id: 8,
+        name: "Oujda",
+        city: null,
+        address: null,
+      },
+    },
+    requested_date: "2026-08-20",
+    requested_time: "09:30:00",
+    status: "arrived",
+    problem_summary: null,
+  };
+  assert.equal(CrcAppointmentSchema.safeParse(appointment).success, true);
+});
+
+test("accepts the minimal reliable CRC action result", () => {
+  assert.deepEqual(
+    CrcAppointmentActionResultSchema.parse({
+      appointment_id: 42,
+      action: "callback",
+      status_from: "pending",
+      status_to: "callback_pending",
+      history_recorded: true,
+    }),
+    {
+      appointment_id: 42,
+      action: "callback",
+      status_from: "pending",
+      status_to: "callback_pending",
+      history_recorded: true,
+    },
+  );
+  assert.equal(
+    CrcAppointmentActionResultSchema.safeParse({
+      appointment_id: 42,
+      action: "reject",
+      status_from: "callback_pending",
+      status_to: "rejected",
+      event_id: "7",
+      history_recorded: true,
+    }).success,
+    true,
   );
 });

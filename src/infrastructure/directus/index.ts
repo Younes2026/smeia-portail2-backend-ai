@@ -12,6 +12,7 @@ import {
 import { createDirectusBookingVehicleService } from "./directus-booking-vehicle.service.js";
 import { createDirectusCatalogService } from "./directus-catalog.service.js";
 import { createDirectusCrcAppointmentsService } from "./directus-crc-appointments.service.js";
+import { createDirectusCrcAppointmentActionsService } from "./directus-crc-appointment-actions.service.js";
 import { createDirectusCurrentUserService } from "./directus-current-user.service.js";
 import { DirectusError } from "./directus-errors.js";
 import { createDirectusHttpClient } from "./directus-http-client.js";
@@ -64,6 +65,12 @@ const configuredCrcAppointmentsService =
       timeoutMs: env.DIRECTUS_TIMEOUT_MS,
     }),
   );
+
+export const crcAppointmentActionsService =
+  createDirectusCrcAppointmentActionsService({
+    baseUrl: env.DIRECTUS_URL,
+    timeoutMs: env.DIRECTUS_TIMEOUT_MS,
+  });
 
 export const getDirectusAiCatalogs = (accessToken: string) =>
   configuredCatalogService.getAiCatalogs(accessToken);
@@ -182,6 +189,17 @@ export {
   type DirectusBookingVehicleIdentity,
   type DirectusBookingVehicleService,
 } from "./directus-booking-vehicle.service.js";
+export {
+  CRC_EVENT_TYPES,
+  CrcDirectusActionStepError,
+  createDirectusCrcAppointmentActionsService,
+  type CrcEventType,
+  type DirectusCrcAppointmentActionsService,
+  type DirectusCrcAppointmentActionsServiceConfig,
+  type DirectusCrcAppointmentEventCreateInput,
+  type DirectusCrcAppointmentEventCreateResult,
+  type DirectusCrcAppointmentReplayEvent,
+} from "./directus-crc-appointment-actions.service.js";
 export {
   createDirectusCrcAppointmentsService,
   type DirectusCrcAppointmentsService,

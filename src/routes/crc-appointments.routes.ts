@@ -1,8 +1,9 @@
-import { Router, type RequestHandler } from "express";
+import express, { Router, type RequestHandler } from "express";
 
 import type {
   GetCrcAppointmentUseCase,
   ListCrcAppointmentsUseCase,
+  ExecuteCrcAppointmentActionUseCase,
 } from "../application/crc-appointments/index.js";
 import type { DirectusCurrentUser } from "../infrastructure/directus/index.js";
 import {
@@ -10,6 +11,7 @@ import {
   getDirectusAccessToken,
 } from "../middleware/bearer-auth.js";
 import { createCrcRoleMiddleware } from "../middleware/crc-role.js";
+import { getCrcAgentIdentity } from "../middleware/crc-role.js";
 import { HttpError } from "../middleware/error-handler.js";
 
 export type CrcAppointmentsRouterDependencies = {
@@ -17,6 +19,7 @@ export type CrcAppointmentsRouterDependencies = {
   getCurrentUser(accessToken: string): Promise<DirectusCurrentUser>;
   listAppointments: ListCrcAppointmentsUseCase;
   getAppointment: GetCrcAppointmentUseCase;
+  executeAction: ExecuteCrcAppointmentActionUseCase;
 };
 
 const rejectQueryParameters: RequestHandler = (
@@ -45,6 +48,26 @@ export const createCrcAppointmentsRouter = (
     expectedRoleId: dependencies.expectedRoleId,
     getCurrentUser: dependencies.getCurrentUser,
   });
+  const parseActionBody = express.json({ limit: "16kb" });
+
+  const actionHandler = (
+    action: "callback" | "reject" | "confirm",
+  ): RequestHandler =>
+    async (request, response, next) => {
+      try {
+        const result = await dependencies.executeAction({
+          accessToken: getDirectusAccessToken(response),
+          actorUserId: getCrcAgentIdentity(response).userId,
+          appointmentId: request.params.appointmentId,
+          action,
+          idempotencyKey: request.get("Idempotency-Key"),
+          body: request.body,
+        });
+        response.status(200).json({ data: result });
+      } catch (error: unknown) {
+        next(error);
+      }
+    };
 
   router.get(
     "/api/crc/appointments",
@@ -87,6 +110,17 @@ export const createCrcAppointmentsRouter = (
       }
     },
   );
+
+  for (const action of ["callback", "reject", "confirm"] as const) {
+    router.post(
+      `/api/crc/appointments/:appointmentId/${action}`,
+      bearerAuthMiddleware,
+      requireCrcRole,
+      rejectQueryParameters,
+      parseActionBody,
+      actionHandler(action),
+    );
+  }
 
   return router;
 };

@@ -5,7 +5,11 @@ import {
   BookingAvailabilityError,
   BookingConfirmationError,
 } from "../application/ai-booking/index.js";
-import { DirectusError } from "../infrastructure/directus/index.js";
+import { CrcAppointmentActionError } from "../application/crc-appointments/index.js";
+import {
+  CrcDirectusActionStepError,
+  DirectusError,
+} from "../infrastructure/directus/index.js";
 import { AiDiagnosticError } from "../infrastructure/openai/index.js";
 
 type ErrorWithStatus = Error & {
@@ -79,6 +83,24 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
+  if (error instanceof CrcAppointmentActionError) {
+    const statusByCode = {
+      CRC_APPOINTMENT_NOT_FOUND: 404,
+      CRC_APPOINTMENT_NOT_TREATABLE: 409,
+      CRC_APPOINTMENT_CONFLICT: 409,
+      CRC_IDEMPOTENCY_CONFLICT: 409,
+      CRC_HISTORY_WRITE_FAILED: 502,
+      CRC_WRITE_CONFIGURATION_UNAVAILABLE: 503,
+    } as const;
+    sendError(
+      response,
+      statusByCode[error.code],
+      error.code,
+      error.message,
+    );
+    return;
+  }
+
   if (error instanceof BookingAvailabilityError) {
     const status = (() => {
       if (error.code === "BOOKING_AVAILABILITY_NOT_FOUND") {
@@ -114,6 +136,28 @@ export const errorHandler: ErrorRequestHandler = (
       statusByCode[error.code],
       error.code,
       error.message,
+    );
+    return;
+  }
+
+  if (error instanceof CrcDirectusActionStepError) {
+    const responseStatus = (() => {
+      if (error.code === "DIRECTUS_UNAUTHORIZED") {
+        return 401;
+      }
+      if (error.code === "DIRECTUS_FORBIDDEN") {
+        return 403;
+      }
+      if (error.code === "DIRECTUS_TIMEOUT") {
+        return 504;
+      }
+      return 502;
+    })();
+    sendError(
+      response,
+      responseStatus,
+      error.code,
+      "Directus could not complete the CRC action.",
     );
     return;
   }

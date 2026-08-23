@@ -15,6 +15,8 @@ import {
 import {
   getCrcAppointmentUseCase,
   listCrcAppointmentsUseCase,
+  executeCrcAppointmentActionUseCase,
+  type ExecuteCrcAppointmentActionUseCase,
   type GetCrcAppointmentUseCase,
   type ListCrcAppointmentsUseCase,
 } from "./application/crc-appointments/index.js";
@@ -51,6 +53,7 @@ export type AppDependencies = {
   ) => Promise<DirectusCurrentUser>;
   listCrcAppointments?: ListCrcAppointmentsUseCase;
   getCrcAppointment?: GetCrcAppointmentUseCase;
+  executeCrcAppointmentAction?: ExecuteCrcAppointmentActionUseCase;
 };
 
 const allowedOrigins = new Set(env.CORS_ORIGINS);
@@ -108,6 +111,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         dependencies.listCrcAppointments ?? listCrcAppointmentsUseCase,
       getAppointment:
         dependencies.getCrcAppointment ?? getCrcAppointmentUseCase,
+      executeAction:
+        dependencies.executeCrcAppointmentAction ??
+        executeCrcAppointmentActionUseCase,
     }),
   );
   createdApp.use(express.json({ limit: "1mb" }));

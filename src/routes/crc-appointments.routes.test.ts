@@ -7,10 +7,19 @@ import type { Express } from "express";
 
 import { createApp } from "../app.js";
 import {
+  CrcAppointmentActionError,
   createGetCrcAppointmentUseCase,
   createListCrcAppointmentsUseCase,
+  type ExecuteCrcAppointmentActionInput,
 } from "../application/crc-appointments/index.js";
-import type { CrcAppointment } from "../domain/crc-appointments/index.js";
+import type {
+  CrcAppointment,
+  CrcAppointmentActionResult,
+} from "../domain/crc-appointments/index.js";
+import {
+  CrcDirectusActionStepError,
+  DirectusError,
+} from "../infrastructure/directus/index.js";
 
 const CRC_ROLE_ID = "0234F31D-78EC-4166-BE7F-989132F2B065";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -74,12 +83,14 @@ const withServer = async <T>(
 
 const createHarness = (
   roleId = CRC_ROLE_ID,
-  options: { omitRole?: boolean } = {},
+  options: { omitRole?: boolean; identityError?: DirectusError } = {},
 ) => {
   const listCalls: Array<{ token: string; query: unknown }> = [];
   const getCalls: Array<{ token: string; id: number }> = [];
+  const actionCalls: ExecuteCrcAppointmentActionInput[] = [];
   let identityCalls = 0;
   let appointmentResult: CrcAppointment | null = appointment;
+  let actionError: Error | null = null;
 
   const listCrcAppointments = createListCrcAppointmentsUseCase({
     async listAppointments(token, query) {
@@ -98,6 +109,9 @@ const createHarness = (
     async getDirectusCurrentUser(token) {
       identityCalls += 1;
       assert.equal(token, ACCESS_TOKEN);
+      if (options.identityError !== undefined) {
+        throw options.identityError;
+      }
       if (options.omitRole === true) {
         return { id: USER_ID };
       }
@@ -108,15 +122,39 @@ const createHarness = (
     },
     listCrcAppointments,
     getCrcAppointment,
+    async executeCrcAppointmentAction(input) {
+      actionCalls.push(input);
+      if (actionError !== null) {
+        throw actionError;
+      }
+      const statusByAction = {
+        callback: "callback_pending",
+        reject: "rejected",
+        confirm: "confirmed",
+      } as const;
+      const action = input.action as keyof typeof statusByAction;
+      return {
+        appointment_id: 42,
+        action,
+        status_from: "pending",
+        status_to: statusByAction[action],
+        event_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        history_recorded: true,
+      } satisfies CrcAppointmentActionResult;
+    },
   });
 
   return {
     application,
     getCalls,
+    actionCalls,
     listCalls,
     getIdentityCalls: () => identityCalls,
     setAppointmentResult(value: CrcAppointment | null) {
       appointmentResult = value;
+    },
+    setActionError(value: Error | null) {
+      actionError = value;
     },
   };
 };
@@ -237,5 +275,198 @@ test("maps invalid and missing CRC appointment details", async () => {
       (await unexpectedQuery.json()).error.code,
       "INVALID_REQUEST",
     );
+  });
+});
+
+test("authorizes and forwards the three CRC actions with JSON bodies", async () => {
+  const harness = createHarness();
+  const actions = [
+    {
+      action: "callback",
+      body: { internal_note: "Client injoignable" },
+      expectedStatus: "callback_pending",
+    },
+    {
+      action: "reject",
+      body: { reason_code: "service_unavailable" },
+      expectedStatus: "rejected",
+    },
+    {
+      action: "confirm",
+      body: { internal_note: "Confirmation de démonstration" },
+      expectedStatus: "confirmed",
+    },
+  ] as const;
+
+  await withServer(harness.application, async (baseUrl) => {
+    for (const item of actions) {
+      const response = await fetch(
+        `${baseUrl}/api/crc/appointments/42/${item.action}`,
+        {
+          method: "POST",
+          headers: {
+            ...crcHeaders,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+          },
+          body: JSON.stringify(item.body),
+        },
+      );
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.data.status_to, item.expectedStatus);
+      assert.equal(payload.data.action, item.action);
+      assert.equal(payload.data.history_recorded, true);
+      assert.equal(JSON.stringify(payload).includes(ACCESS_TOKEN), false);
+    }
+  });
+
+  assert.equal(harness.actionCalls.length, 3);
+  assert.deepEqual(harness.actionCalls[0], {
+    accessToken: ACCESS_TOKEN,
+    actorUserId: USER_ID,
+    appointmentId: "42",
+    action: "callback",
+    idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+    body: { internal_note: "Client injoignable" },
+  });
+});
+
+test("blocks CRC writes before the action and maps write configuration errors", async () => {
+  const unauthenticated = createHarness();
+  await withServer(unauthenticated.application, async (baseUrl) => {
+    const response = await fetch(
+      `${baseUrl}/api/crc/appointments/42/callback`,
+      { method: "POST" },
+    );
+    assert.equal(response.status, 401);
+  });
+  assert.equal(unauthenticated.actionCalls.length, 0);
+
+  const wrongRole = createHarness(
+    "22222222-2222-4222-8222-222222222222",
+  );
+  await withServer(wrongRole.application, async (baseUrl) => {
+    const response = await fetch(
+      `${baseUrl}/api/crc/appointments/42/reject`,
+      {
+        method: "POST",
+        headers: {
+          ...crcHeaders,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+        },
+        body: JSON.stringify({ reason_code: "service_unavailable" }),
+      },
+    );
+    assert.equal(response.status, 403);
+  });
+  assert.equal(wrongRole.actionCalls.length, 0);
+
+  const unavailable = createHarness();
+  unavailable.setActionError(
+    new CrcAppointmentActionError("CRC_WRITE_CONFIGURATION_UNAVAILABLE"),
+  );
+  await withServer(unavailable.application, async (baseUrl) => {
+    const response = await fetch(
+      `${baseUrl}/api/crc/appointments/42/confirm`,
+      {
+        method: "POST",
+        headers: {
+          ...crcHeaders,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+        },
+        body: "{}",
+      },
+    );
+    assert.equal(response.status, 503);
+    assert.equal(
+      (await response.json()).error.code,
+      "CRC_WRITE_CONFIGURATION_UNAVAILABLE",
+    );
+  });
+});
+
+test("rejects action query parameters and malformed JSON before mutation", async () => {
+  const harness = createHarness();
+  await withServer(harness.application, async (baseUrl) => {
+    const headers = {
+      ...crcHeaders,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+    };
+    const queryResponse = await fetch(
+      `${baseUrl}/api/crc/appointments/42/callback?force=true`,
+      { method: "POST", headers, body: "{}" },
+    );
+    assert.equal(queryResponse.status, 400);
+
+    const invalidJsonResponse = await fetch(
+      `${baseUrl}/api/crc/appointments/42/callback`,
+      { method: "POST", headers, body: "{" },
+    );
+    assert.equal(invalidJsonResponse.status, 400);
+    assert.equal(
+      (await invalidJsonResponse.json()).error.code,
+      "INVALID_JSON",
+    );
+  });
+  assert.equal(harness.actionCalls.length, 0);
+});
+
+test("returns a clean public Directus error for CRC actions", async () => {
+  const harness = createHarness();
+  harness.setActionError(
+    new CrcDirectusActionStepError(
+      new DirectusError("DIRECTUS_FORBIDDEN", 403),
+    ),
+  );
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...values: unknown[]) => warnings.push(values);
+  try {
+    await withServer(harness.application, async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/crc/appointments/42/callback`,
+        {
+          method: "POST",
+          headers: {
+            ...crcHeaders,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+          },
+          body: "{}",
+        },
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), {
+        error: {
+          code: "DIRECTUS_FORBIDDEN",
+          message: "Directus could not complete the CRC action.",
+        },
+      });
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 0);
+});
+
+test("labels a forbidden users/me identity lookup", async () => {
+  const harness = createHarness(CRC_ROLE_ID, {
+    identityError: new DirectusError("DIRECTUS_FORBIDDEN", 403),
+  });
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/crc/appointments`, {
+      headers: crcHeaders,
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "DIRECTUS_FORBIDDEN",
+        message: "Directus could not complete the CRC action.",
+      },
+    });
   });
 });

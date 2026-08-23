@@ -25,6 +25,7 @@ const envSchema = z.object({
   DIRECTUS_CRC_ROLE_ID: z
     .uuid()
     .default("0234F31D-78EC-4166-BE7F-989132F2B065"),
+  DIRECTUS_CRC_WRITE_TOKEN: optionalSecretSchema,
   DIRECTUS_BOOKING_TOKEN: optionalSecretSchema,
   AI_BOOKING_SLOT_SECRET: optionalSecretSchema,
   OPENAI_API_KEY: optionalSecretSchema,
@@ -53,6 +54,7 @@ const parsedEnv = envSchema.safeParse({
   DIRECTUS_URL: process.env.DIRECTUS_URL,
   DIRECTUS_TIMEOUT_MS: process.env.DIRECTUS_TIMEOUT_MS,
   DIRECTUS_CRC_ROLE_ID: process.env.DIRECTUS_CRC_ROLE_ID,
+  DIRECTUS_CRC_WRITE_TOKEN: process.env.DIRECTUS_CRC_WRITE_TOKEN,
   DIRECTUS_BOOKING_TOKEN: process.env.DIRECTUS_BOOKING_TOKEN,
   AI_BOOKING_SLOT_SECRET: process.env.AI_BOOKING_SLOT_SECRET,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
