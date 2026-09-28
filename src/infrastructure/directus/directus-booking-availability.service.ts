@@ -16,7 +16,10 @@ import {
   type BookingWorkshop,
   type DirectusBookingAvailabilitySnapshot,
 } from "../../domain/ai-booking/index.js";
-import { DirectusError } from "./directus-errors.js";
+import {
+  describeDirectusJsonResponse,
+  DirectusError,
+} from "./directus-errors.js";
 import type { DirectusReadClient } from "./directus-http-client.js";
 
 const PAGE_SIZE = 200;
@@ -28,6 +31,12 @@ const positiveSafeIntegerSchema = z
   .int()
   .positive()
   .max(Number.MAX_SAFE_INTEGER);
+const directusPositiveSafeIntegerSchema = z
+  .union([
+    positiveSafeIntegerSchema,
+    z.string().trim().regex(/^[1-9]\d*$/).transform(Number),
+  ])
+  .pipe(positiveSafeIntegerSchema);
 const workshopIdSchema = positiveSafeIntegerSchema;
 const workshopTypeSchema = z.enum(ALLOWED_WORKSHOP_TYPES);
 
@@ -52,8 +61,8 @@ export type DirectusWorkshopResolutionQuery = z.infer<
 
 const workshopRelationSchema = z
   .union([
-    workshopIdSchema,
-    z.object({ id: workshopIdSchema }).strict(),
+    directusPositiveSafeIntegerSchema,
+    z.object({ id: directusPositiveSafeIntegerSchema }).passthrough(),
   ])
   .transform((relation) =>
     typeof relation === "number" ? relation : relation.id,
@@ -97,7 +106,7 @@ const workingDaysSchema = z.preprocess(
 
 const directusShowroomSchema = z
   .object({
-    id: z.number().int().positive(),
+    id: directusPositiveSafeIntegerSchema,
     name: z.string().trim().min(1),
     address: z.string().trim().min(1).nullable(),
     city: z.string().trim().min(1).nullable(),
@@ -106,12 +115,12 @@ const directusShowroomSchema = z
   .strict();
 
 const directusResolvedShowroomSchema = directusShowroomSchema
-  .extend({ id: positiveSafeIntegerSchema })
+  .extend({ id: directusPositiveSafeIntegerSchema })
   .strict();
 
 const directusResolvedWorkshopSchema = z
   .object({
-    id: positiveSafeIntegerSchema,
+    id: directusPositiveSafeIntegerSchema,
     name: z.string().trim().min(1),
     workshop_type: workshopTypeSchema,
     opening_time: directusTimeSchema,
@@ -171,6 +180,7 @@ export type DirectusBookingAvailabilityQuery = {
   showroomId: number;
   startDate: string;
   endDate: string;
+  excludedAppointmentId?: number;
 };
 
 export type ResolvedBookingWorkshop = {
@@ -203,7 +213,11 @@ const parsePayload = <T>(
 ) => {
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
-    throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+    throw new DirectusError(
+      "DIRECTUS_INVALID_RESPONSE",
+      200,
+      describeDirectusJsonResponse(payload),
+    );
   }
   return parsed.data.data;
 };
@@ -369,7 +383,10 @@ export const createDirectusBookingAvailabilityService = (
       new Set(query.workshopIds).size !== query.workshopIds.length ||
       query.workshopIds.some(
         (workshopId) => !workshopIdSchema.safeParse(workshopId).success,
-      )
+      ) ||
+      (query.excludedAppointmentId !== undefined &&
+        !positiveSafeIntegerSchema.safeParse(query.excludedAppointmentId)
+          .success)
     ) {
       throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
     }
@@ -413,6 +430,12 @@ export const createDirectusBookingAvailabilityService = (
     appointmentParams.set("filter[requested_date][_gte]", query.startDate);
     appointmentParams.set("filter[requested_date][_lte]", query.endDate);
     appointmentParams.set("filter[status][_in]", "pending,confirmed");
+    if (query.excludedAppointmentId !== undefined) {
+      appointmentParams.set(
+        "filter[id][_neq]",
+        String(query.excludedAppointmentId),
+      );
+    }
     appointmentParams.set(
       "sort",
       "requested_date,requested_time,workshop_id",

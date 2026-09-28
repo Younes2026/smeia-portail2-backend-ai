@@ -189,24 +189,67 @@ export const CrcRejectActionBodySchema = z
     }
   });
 
-export const CrcConfirmActionBodySchema = z
+export const CrcLegacyConfirmActionBodySchema = z
   .object({
     internal_note: optionalNoteSchema(1_000),
   })
   .strict();
 
-export const CrcIdempotencyKeySchema = z.uuid();
-
-export const CrcAppointmentActionResultSchema = z
+export const CrcSelectedSlotConfirmActionBodySchema = z
   .object({
-    appointment_id: CrcAppointmentIdSchema,
-    action: CrcAppointmentActionSchema,
-    status_from: z.enum(["pending", "callback_pending"]),
-    status_to: z.enum(["callback_pending", "rejected", "confirmed"]),
-    event_id: z.string().trim().min(1).optional(),
-    history_recorded: z.literal(true),
+    selection: z
+      .object({
+        slot_token: z.string().trim().min(1).max(4_096),
+      })
+      .strict(),
+    agreement_channel: z.literal("telephone"),
+    internal_note: optionalNoteSchema(1_000),
   })
   .strict();
+
+export const CrcConfirmActionBodySchema = z.union([
+  CrcLegacyConfirmActionBodySchema,
+  CrcSelectedSlotConfirmActionBodySchema,
+]);
+
+export const CrcIdempotencyKeySchema = z.uuid();
+
+const CrcAppointmentActionResultBaseSchema = z.object({
+  appointment_id: CrcAppointmentIdSchema,
+  action: CrcAppointmentActionSchema,
+  status_from: z.enum(["pending", "callback_pending"]),
+  status_to: z.enum(["callback_pending", "rejected", "confirmed"]),
+  event_id: z.string().trim().min(1).optional(),
+  history_recorded: z.literal(true),
+});
+
+export const CrcLegacyAppointmentActionResultSchema =
+  CrcAppointmentActionResultBaseSchema.strict();
+
+export const CrcSelectedSlotConfirmActionResultSchema =
+  CrcAppointmentActionResultBaseSchema.extend({
+    action: z.literal("confirm"),
+    status_to: z.literal("confirmed"),
+    previous_slot: z
+      .object({
+        date: IsoDateSchema,
+        time: IsoTimeSchema,
+      })
+      .strict(),
+    selected_slot: z
+      .object({
+        date: IsoDateSchema,
+        time: IsoTimeSchema,
+        workshop_id: positiveSafeIntegerSchema,
+      })
+      .strict(),
+    agreement_channel: z.literal("telephone"),
+  }).strict();
+
+export const CrcAppointmentActionResultSchema = z.union([
+  CrcLegacyAppointmentActionResultSchema,
+  CrcSelectedSlotConfirmActionResultSchema,
+]);
 
 export type CrcAppointment = z.infer<typeof CrcAppointmentSchema>;
 export type CrcAppointmentListQuery = z.infer<
@@ -222,9 +265,21 @@ export type CrcCallbackActionBody = z.infer<
 >;
 export type CrcRejectActionBody = z.infer<typeof CrcRejectActionBodySchema>;
 export type CrcConfirmActionBody = z.infer<typeof CrcConfirmActionBodySchema>;
+export type CrcLegacyConfirmActionBody = z.infer<
+  typeof CrcLegacyConfirmActionBodySchema
+>;
+export type CrcSelectedSlotConfirmActionBody = z.infer<
+  typeof CrcSelectedSlotConfirmActionBodySchema
+>;
 export type CrcRejectionReasonCode = z.infer<
   typeof CrcRejectionReasonCodeSchema
 >;
 export type CrcAppointmentActionResult = z.infer<
   typeof CrcAppointmentActionResultSchema
+>;
+export type CrcLegacyAppointmentActionResult = z.infer<
+  typeof CrcLegacyAppointmentActionResultSchema
+>;
+export type CrcSelectedSlotConfirmActionResult = z.infer<
+  typeof CrcSelectedSlotConfirmActionResultSchema
 >;

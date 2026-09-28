@@ -126,6 +126,40 @@ test("validates strict callback, reject and confirmation action bodies", () => {
     },
   );
   assert.deepEqual(CrcConfirmActionBodySchema.parse({}), {});
+  assert.deepEqual(
+    CrcConfirmActionBodySchema.parse({
+      selection: { slot_token: " signed-slot-token " },
+      agreement_channel: "telephone",
+      internal_note: " CrÃ©neau acceptÃ© par tÃ©lÃ©phone. ",
+    }),
+    {
+      selection: { slot_token: "signed-slot-token" },
+      agreement_channel: "telephone",
+      internal_note: "CrÃ©neau acceptÃ© par tÃ©lÃ©phone.",
+    },
+  );
+  assert.equal(
+    CrcConfirmActionBodySchema.safeParse({
+      selection: { slot_token: "signed-slot-token" },
+    }).success,
+    false,
+  );
+  assert.equal(
+    CrcConfirmActionBodySchema.safeParse({
+      selection: {
+        slot_token: "signed-slot-token",
+        requested_date: "2026-08-25",
+      },
+      agreement_channel: "telephone",
+    }).success,
+    false,
+  );
+  assert.equal(
+    CrcConfirmActionBodySchema.safeParse({
+      agreement_channel: "telephone",
+    }).success,
+    false,
+  );
   assert.equal(
     CrcRejectActionBodySchema.safeParse({ reason_code: "other" }).success,
     false,
@@ -209,5 +243,45 @@ test("accepts the minimal reliable CRC action result", () => {
       history_recorded: true,
     }).success,
     true,
+  );
+});
+
+test("accepts a strict selected-slot confirmation result without a slot token", () => {
+  const result = {
+    appointment_id: 34,
+    action: "confirm",
+    status_from: "pending",
+    status_to: "confirmed",
+    previous_slot: {
+      date: "2026-08-31",
+      time: "13:00:00",
+    },
+    selected_slot: {
+      date: "2026-08-25",
+      time: "10:30:00",
+      workshop_id: 4,
+    },
+    agreement_channel: "telephone",
+    event_id: "6",
+    history_recorded: true,
+  };
+
+  assert.deepEqual(CrcAppointmentActionResultSchema.parse(result), result);
+  assert.equal(
+    CrcAppointmentActionResultSchema.safeParse({
+      ...result,
+      slot_token: "must-not-be-exposed",
+    }).success,
+    false,
+  );
+  assert.equal(
+    CrcAppointmentActionResultSchema.safeParse({
+      ...result,
+      selected_slot: {
+        ...result.selected_slot,
+        workshop_id: 0,
+      },
+    }).success,
+    false,
   );
 });

@@ -332,6 +332,45 @@ test("authorizes and forwards the three CRC actions with JSON bodies", async () 
   });
 });
 
+test("forwards a selected-slot confirmation without exposing its token", async () => {
+  const harness = createHarness();
+  const slotToken = "signed-slot-token-that-must-remain-request-only";
+  const body = {
+    selection: { slot_token: slotToken },
+    agreement_channel: "telephone",
+    internal_note: "Nouveau crÃ©neau acceptÃ© par tÃ©lÃ©phone.",
+  } as const;
+
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await fetch(
+      `${baseUrl}/api/crc/appointments/42/confirm`,
+      {
+        method: "POST",
+        headers: {
+          ...crcHeaders,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(JSON.stringify(payload).includes(slotToken), false);
+  });
+
+  assert.equal(harness.actionCalls.length, 1);
+  assert.deepEqual(harness.actionCalls[0], {
+    accessToken: ACCESS_TOKEN,
+    actorUserId: USER_ID,
+    appointmentId: "42",
+    action: "confirm",
+    idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+    body,
+  });
+});
+
 test("blocks CRC writes before the action and maps write configuration errors", async () => {
   const unauthenticated = createHarness();
   await withServer(unauthenticated.application, async (baseUrl) => {
@@ -385,6 +424,39 @@ test("blocks CRC writes before the action and maps write configuration errors", 
       (await response.json()).error.code,
       "CRC_WRITE_CONFIGURATION_UNAVAILABLE",
     );
+  });
+});
+
+test("maps an unavailable selected CRC slot to a clean HTTP 409", async () => {
+  const harness = createHarness();
+  harness.setActionError(
+    new CrcAppointmentActionError("CRC_SLOT_NO_LONGER_AVAILABLE"),
+  );
+
+  await withServer(harness.application, async (baseUrl) => {
+    const response = await fetch(
+      `${baseUrl}/api/crc/appointments/42/confirm`,
+      {
+        method: "POST",
+        headers: {
+          ...crcHeaders,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+        },
+        body: JSON.stringify({
+          selection: { slot_token: "signed-slot-token" },
+          agreement_channel: "telephone",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "CRC_SLOT_NO_LONGER_AVAILABLE",
+        message: "The selected CRC slot is no longer available.",
+      },
+    });
   });
 });
 
@@ -451,6 +523,104 @@ test("returns a clean public Directus error for CRC actions", async () => {
     console.warn = originalWarn;
   }
   assert.equal(warnings.length, 0);
+});
+
+test("exposes only safe CRC step metadata outside production", async () => {
+  const harness = createHarness();
+  harness.setActionError(
+    new CrcDirectusActionStepError(
+      new DirectusError("DIRECTUS_INVALID_RESPONSE", 200, {
+        directus_http_status: 200,
+        response_kind: "json",
+        data_kind: "object",
+        field_names: ["id", "status"],
+      }),
+      "CRC_APPOINTMENT_READ",
+    ),
+  );
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.NODE_ENV;
+  try {
+    await withServer(harness.application, async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/crc/appointments/42/confirm`,
+        {
+          method: "POST",
+          headers: {
+            ...crcHeaders,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+          },
+          body: "{}",
+        },
+      );
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), {
+        error: {
+          code: "DIRECTUS_INVALID_RESPONSE",
+          message: "Directus could not complete the CRC action.",
+        },
+        diagnostic: {
+          step: "CRC_APPOINTMENT_READ",
+          directus_http_status: 200,
+          response_kind: "json",
+          data_kind: "object",
+          field_names: ["id", "status"],
+        },
+      });
+    });
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
+});
+
+test("never exposes CRC step diagnostics in production", async () => {
+  const harness = createHarness();
+  harness.setActionError(
+    new CrcDirectusActionStepError(
+      new DirectusError("DIRECTUS_INVALID_RESPONSE", 200, {
+        directus_http_status: 200,
+        response_kind: "json",
+        data_kind: "array",
+        data_length: 0,
+      }),
+      "CRC_CONDITIONAL_PATCH",
+    ),
+  );
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    await withServer(harness.application, async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/crc/appointments/42/confirm`,
+        {
+          method: "POST",
+          headers: {
+            ...crcHeaders,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+          },
+          body: "{}",
+        },
+      );
+      assert.deepEqual(await response.json(), {
+        error: {
+          code: "DIRECTUS_INVALID_RESPONSE",
+          message: "Directus could not complete the CRC action.",
+        },
+      });
+    });
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
 });
 
 test("labels a forbidden users/me identity lookup", async () => {

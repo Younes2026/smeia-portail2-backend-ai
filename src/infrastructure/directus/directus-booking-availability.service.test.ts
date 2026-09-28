@@ -33,7 +33,7 @@ const createHarness = (invalidWorkshops = false, showroomId = 8) => {
           : {
               data: [
                 {
-                  id: 20,
+                  id: "20",
                   name: "Atelier Oujda",
                   workshop_type: "mecanique",
                   opening_time: "08:00",
@@ -49,7 +49,7 @@ const createHarness = (invalidWorkshops = false, showroomId = 8) => {
                   active: true,
                   client_bookable: true,
                   showroom_id: {
-                    id: showroomId,
+                    id: String(showroomId),
                     name: "Oujda",
                     address: "Adresse test",
                     city: "Casablanca",
@@ -64,7 +64,7 @@ const createHarness = (invalidWorkshops = false, showroomId = 8) => {
         return {
           data: [
             {
-              workshop_id: 20,
+              workshop_id: { id: "20" },
               date: "2026-08-12",
               total_capacity_hours: "36.0",
               used_capacity_hours: 1,
@@ -77,7 +77,7 @@ const createHarness = (invalidWorkshops = false, showroomId = 8) => {
       if (endpoint === "/items/resources") {
         return {
           data: [
-            { workshop_id: { id: 20 }, active: true, daily_hours: 9 },
+            { workshop_id: "20", active: true, daily_hours: 9 },
           ],
         };
       }
@@ -86,7 +86,7 @@ const createHarness = (invalidWorkshops = false, showroomId = 8) => {
         return {
           data: [
             {
-              workshop_id: 20,
+              workshop_id: { id: "20" },
               requested_date: "2026-08-12",
               requested_time: "09:30",
               status: "pending",
@@ -547,6 +547,51 @@ test("limits schedule and appointment reads to the requested date range", async 
     appointmentCall?.params.get("filter[status][_in]"),
     "pending,confirmed",
   );
+  assert.equal(appointmentCall?.params.has("filter[id][_neq]"), false);
+});
+
+test("excludes only the current appointment from the appointment read", async () => {
+  const harness = createHarness();
+  await harness.service.getBookingAvailabilitySnapshot(TECHNICAL_TOKEN, {
+    workshopIds: [20],
+    showroomId: 8,
+    startDate: "2026-08-12",
+    endDate: "2026-08-13",
+    excludedAppointmentId: 42,
+  });
+
+  const appointmentCall = harness.calls.find(
+    (call) => call.endpoint === "/items/appointments",
+  );
+  assert.equal(appointmentCall?.params.get("filter[id][_neq]"), "42");
+  assert.ok(
+    harness.calls
+      .filter((call) => call.endpoint !== "/items/appointments")
+      .every((call) => !call.params.has("filter[id][_neq]")),
+  );
+});
+
+test("rejects an invalid excluded appointment id before Directus", async () => {
+  for (const excludedAppointmentId of [
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    const harness = createHarness();
+
+    await assertDirectusError(
+      harness.service.getBookingAvailabilitySnapshot(TECHNICAL_TOKEN, {
+        workshopIds: [20],
+        showroomId: 8,
+        startDate: "2026-08-12",
+        endDate: "2026-08-13",
+        excludedAppointmentId,
+      }),
+      "DIRECTUS_INVALID_RESPONSE",
+    );
+    assert.equal(harness.calls.length, 0);
+  }
 });
 
 test("rejects a snapshot workshop returned for another showroom", async () => {

@@ -142,6 +142,20 @@ export const getDirectusBookingAvailabilitySnapshot = async (
   }
 };
 
+/**
+ * Reuses the configured availability reader with an explicitly supplied
+ * backend credential. CRC actions pass their dedicated writer token here so
+ * the human Agent CRC token never acquires technical permissions.
+ */
+export const getDirectusBookingAvailabilitySnapshotWithToken = (
+  technicalToken: string,
+  query: DirectusBookingAvailabilityQuery,
+) =>
+  configuredBookingAvailabilityService.getBookingAvailabilitySnapshot(
+    technicalToken,
+    query,
+  );
+
 export const resolveDirectusBookingWorkshops = async (
   query: DirectusWorkshopResolutionQuery,
 ) => {
@@ -193,12 +207,16 @@ export {
   CRC_EVENT_TYPES,
   CrcDirectusActionStepError,
   createDirectusCrcAppointmentActionsService,
+  type CrcDirectusActionStep,
   type CrcEventType,
   type DirectusCrcAppointmentActionsService,
   type DirectusCrcAppointmentActionsServiceConfig,
+  type DirectusCrcAppointmentActionContext,
+  type DirectusCrcAppointmentObservedState,
   type DirectusCrcAppointmentEventCreateInput,
   type DirectusCrcAppointmentEventCreateResult,
   type DirectusCrcAppointmentReplayEvent,
+  type DirectusCrcAppointmentSlotUpdate,
 } from "./directus-crc-appointment-actions.service.js";
 export {
   createDirectusCrcAppointmentsService,
@@ -219,9 +237,11 @@ export {
   type DirectusCatalogService,
 } from "./directus-catalog.service.js";
 export {
+  describeDirectusJsonResponse,
   DirectusError,
   mapDirectusHttpStatus,
   type DirectusErrorCode,
+  type DirectusResponseDiagnostic,
 } from "./directus-errors.js";
 export {
   createDirectusHttpClient,

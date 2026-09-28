@@ -1,7 +1,4 @@
-import {
-  DirectusError,
-  mapDirectusHttpStatus,
-} from "./directus-errors.js";
+import { DirectusError, mapDirectusHttpStatus } from "./directus-errors.js";
 
 export type DirectusFetch = (
   input: string | URL | Request,
@@ -85,13 +82,35 @@ export const createDirectusHttpClient = (
         });
 
         if (!response.ok) {
-          throw mapDirectusHttpStatus(response.status);
+          const mapped = mapDirectusHttpStatus(response.status);
+          throw new DirectusError(mapped.code, response.status, {
+            directus_http_status: response.status,
+            response_kind: response.headers
+              .get("content-type")
+              ?.toLowerCase()
+              .includes("json")
+              ? "json"
+              : "non_json",
+            data_kind: "missing",
+          });
         }
 
+        const responseText = await response.text();
+        if (responseText.trim().length === 0) {
+          throw new DirectusError("DIRECTUS_INVALID_RESPONSE", response.status, {
+            directus_http_status: response.status,
+            response_kind: "empty",
+            data_kind: "missing",
+          });
+        }
         try {
-          return (await response.json()) as unknown;
+          return JSON.parse(responseText) as unknown;
         } catch {
-          throw new DirectusError("DIRECTUS_INVALID_RESPONSE");
+          throw new DirectusError("DIRECTUS_INVALID_RESPONSE", response.status, {
+            directus_http_status: response.status,
+            response_kind: "non_json",
+            data_kind: "missing",
+          });
         }
       } catch (error: unknown) {
         if (error instanceof DirectusError) {

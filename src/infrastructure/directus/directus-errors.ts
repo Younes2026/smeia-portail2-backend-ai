@@ -10,6 +10,70 @@ export type DirectusErrorCode =
   | "DIRECTUS_INVALID_RESPONSE"
   | "DIRECTUS_ERROR";
 
+export type DirectusResponseDiagnostic = {
+  directus_http_status: number;
+  response_kind: "empty" | "json" | "non_json";
+  data_kind: "missing" | "object" | "array";
+  data_length?: number;
+  field_names?: string[];
+};
+
+const getFieldNames = (value: unknown) =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.keys(value).sort().slice(0, 32)
+    : undefined;
+
+export const describeDirectusJsonResponse = (
+  payload: unknown,
+  httpStatus = 200,
+): DirectusResponseDiagnostic => {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return {
+      directus_http_status: httpStatus,
+      response_kind: "json",
+      data_kind: "missing",
+    };
+  }
+
+  if (!("data" in payload)) {
+    const fieldNames = getFieldNames(payload);
+    return {
+      directus_http_status: httpStatus,
+      response_kind: "json",
+      data_kind: "missing",
+      ...(fieldNames === undefined ? {} : { field_names: fieldNames }),
+    };
+  }
+
+  const data = Reflect.get(payload, "data");
+  if (Array.isArray(data)) {
+    const fieldNames = data.length === 1 ? getFieldNames(data[0]) : undefined;
+    return {
+      directus_http_status: httpStatus,
+      response_kind: "json",
+      data_kind: "array",
+      data_length: data.length,
+      ...(fieldNames === undefined ? {} : { field_names: fieldNames }),
+    };
+  }
+
+  if (typeof data === "object" && data !== null) {
+    const fieldNames = getFieldNames(data);
+    return {
+      directus_http_status: httpStatus,
+      response_kind: "json",
+      data_kind: "object",
+      ...(fieldNames === undefined ? {} : { field_names: fieldNames }),
+    };
+  }
+
+  return {
+    directus_http_status: httpStatus,
+    response_kind: "json",
+    data_kind: "missing",
+  };
+};
+
 const safeErrorMessages: Record<DirectusErrorCode, string> = {
   DIRECTUS_UNAUTHORIZED: "Directus authentication is required.",
   DIRECTUS_FORBIDDEN: "Directus access is forbidden.",
@@ -26,12 +90,18 @@ const safeErrorMessages: Record<DirectusErrorCode, string> = {
 export class DirectusError extends Error {
   readonly code: DirectusErrorCode;
   readonly httpStatus: number | undefined;
+  readonly responseDiagnostic: DirectusResponseDiagnostic | undefined;
 
-  constructor(code: DirectusErrorCode, httpStatus?: number) {
+  constructor(
+    code: DirectusErrorCode,
+    httpStatus?: number,
+    responseDiagnostic?: DirectusResponseDiagnostic,
+  ) {
     super(safeErrorMessages[code]);
     this.name = "DirectusError";
     this.code = code;
     this.httpStatus = httpStatus;
+    this.responseDiagnostic = responseDiagnostic;
   }
 }
 

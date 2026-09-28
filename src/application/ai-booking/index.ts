@@ -36,6 +36,7 @@ export {
   BOOKING_SLOT_LOCK_MAX_KEYS,
   confirmAppointmentUseCase,
   createConfirmAppointmentUseCase,
+  sharedBookingSlotLock,
   type ConfirmAppointmentUseCase,
   type ConfirmAppointmentUseCaseDependencies,
 } from "./confirm-appointment.use-case.js";

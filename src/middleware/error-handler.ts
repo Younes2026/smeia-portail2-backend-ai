@@ -34,8 +34,32 @@ const sendError = (
   status: number,
   code: string,
   message: string,
+  diagnostic?: Record<string, unknown>,
 ) => {
-  response.status(status).json({ error: { code, message } });
+  response.status(status).json({
+    error: { code, message },
+    ...(diagnostic === undefined ? {} : { diagnostic }),
+  });
+};
+
+const getLocalCrcDiagnostic = (error: CrcDirectusActionStepError) => {
+  if (process.env.NODE_ENV === "production" || error.step === undefined) {
+    return undefined;
+  }
+
+  return {
+    step: error.step,
+    directus_http_status:
+      error.diagnostic?.directus_http_status ?? error.httpStatus ?? 0,
+    response_kind: error.diagnostic?.response_kind ?? "empty",
+    data_kind: error.diagnostic?.data_kind ?? "missing",
+    ...(error.diagnostic?.data_length === undefined
+      ? {}
+      : { data_length: error.diagnostic.data_length }),
+    ...(error.diagnostic?.field_names === undefined
+      ? {}
+      : { field_names: error.diagnostic.field_names }),
+  };
 };
 
 export const notFoundHandler: RequestHandler = (_request, response) => {
@@ -90,6 +114,11 @@ export const errorHandler: ErrorRequestHandler = (
       CRC_APPOINTMENT_CONFLICT: 409,
       CRC_IDEMPOTENCY_CONFLICT: 409,
       CRC_HISTORY_WRITE_FAILED: 502,
+      CRC_SLOT_TOKEN_INVALID: 400,
+      CRC_SLOT_TOKEN_EXPIRED: 409,
+      CRC_SLOT_CONTEXT_MISMATCH: 422,
+      CRC_SLOT_NO_LONGER_AVAILABLE: 409,
+      CRC_SLOT_VALIDATION_UNAVAILABLE: 503,
       CRC_WRITE_CONFIGURATION_UNAVAILABLE: 503,
     } as const;
     sendError(
@@ -158,6 +187,7 @@ export const errorHandler: ErrorRequestHandler = (
       responseStatus,
       error.code,
       "Directus could not complete the CRC action.",
+      getLocalCrcDiagnostic(error),
     );
     return;
   }

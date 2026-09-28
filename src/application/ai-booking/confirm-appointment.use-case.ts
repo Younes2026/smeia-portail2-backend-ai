@@ -255,6 +255,16 @@ export const createConfirmAppointmentUseCase = (
 
 const systemClock = () => new Date();
 
+/**
+ * Process-local lock shared by client and CRC confirmations.
+ * Multi-instance deployments still require a shared transactional lock.
+ */
+export const sharedBookingSlotLock = createBookingSlotLock({
+  now: systemClock,
+  idleTtlMs: BOOKING_SLOT_LOCK_IDLE_TTL_MS,
+  maxKeys: BOOKING_SLOT_LOCK_MAX_KEYS,
+});
+
 export const confirmAppointmentUseCase = createConfirmAppointmentUseCase({
   slotTokenService: createBookingSlotTokenService({
     secret: env.AI_BOOKING_SLOT_SECRET,
@@ -265,11 +275,7 @@ export const confirmAppointmentUseCase = createConfirmAppointmentUseCase({
     ttlMs: BOOKING_IDEMPOTENCY_TTL_MS,
     maxEntries: BOOKING_IDEMPOTENCY_MAX_ENTRIES,
   }),
-  slotLock: createBookingSlotLock({
-    now: systemClock,
-    idleTtlMs: BOOKING_SLOT_LOCK_IDLE_TTL_MS,
-    maxKeys: BOOKING_SLOT_LOCK_MAX_KEYS,
-  }),
+  slotLock: sharedBookingSlotLock,
   getBookingVehicleIdentity: getDirectusBookingVehicleIdentity,
   getAvailableService: getDirectusAvailableService,
   getBookingSnapshot: getDirectusBookingAvailabilitySnapshot,
